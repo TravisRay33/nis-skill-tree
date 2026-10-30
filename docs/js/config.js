@@ -9,11 +9,11 @@ window.NIS_CONFIG = {
   liveHosts: [],
 
   // Supabase > Project Settings > API (or Connect) > Project URL
-  supabaseUrl: "",
+  supabaseUrl: "https://mopbbtprbiktkplwewta.supabase.co",
 
   // Supabase > Project Settings > API Keys > the "publishable" (or legacy "anon") key.
   // This key is meant to be public; the database rules decide what each signed-in person can do.
-  supabaseAnonKey: "",
+  supabaseAnonKey: "sb_publishable_6zKB8zds8ud_sE22218UfQ_R7x3zWiv",
 
   // Usernames are stored as <username>@<this domain>. No email is ever sent to it.
   // Must match the USERNAME_DOMAIN secret on the manage-users function.
