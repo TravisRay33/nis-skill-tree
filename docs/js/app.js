@@ -437,7 +437,7 @@ function renderAdmin(){
          <input id="npName" placeholder="New person's name" style="flex:1;min-width:140px">${LIVE?`<input id="npUser" placeholder="NIS username" style="width:140px">`:""}
          <select id="npRole">${Object.keys(ROLE_NAME).map(r=>`<option value="${r}" ${r==="intern"?"selected":""}>${ROLE_NAME[r]}</option>`).join("")}</select>
          <select id="npHome">${areaList().map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join("")}</select>
-         <button class="btn primary" data-act="addPerson">Add person</button></div>${LIVE?`<div class="muted" style="font-size:12px;margin-top:6px">New people sign in with their username and the starter password, then pick their own.</div>`:""}</div>
+         <button class="btn primary" data-act="addPerson">Add person</button></div>${LIVE?`<div class="muted" style="font-size:12px;margin-top:6px">New people sign in with their username and the starter password${CFG.forcePasswordChange===false?" and can change it any time with Change password":", then pick their own"}.</div>`:""}</div>
    </div>
    <div class="card" style="margin-top:14px"><h3>${LIVE?"Recent activity":"Activity log (this session)"}</h3>${S.log.length?`<table>${S.log.slice(0,15).map(l=>`<tr><td class="muted" style="width:110px">${fmt(l.date)}</td><td>${esc(l.text)}</td></tr>`).join("")}</table>`:'<div class="muted">No changes yet.</div>'}</div>`;
   fillOvSkills();

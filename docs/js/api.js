@@ -57,7 +57,10 @@ async function fetchAll(table,order){ let out=[]; for(let from=0;;from+=1000){
   const {data,error}=await sb.from(table).select("*").order(order,{ascending:true}).range(from,from+999);
   if(error) throw new Error(error.message); out=out.concat(data); if(data.length<1000) return out; } }
 async function manageUsers(body){ const {data,error}=await sb.functions.invoke("manage-users",{body});
-  if(error){ let msg=error.message; try{ const j=await error.context.json(); msg=j.error||msg; }catch(_){} throw new Error(msg); }
+  if(error){
+    if(error.name==="FunctionsFetchError"||/failed to send/i.test(error.message))
+      throw new Error('Couldn\'t reach the "manage-users" function. In Supabase > Edge Functions, check it is deployed with exactly that name and that "Verify JWT" is turned off.');
+    let msg=error.message; try{ const j=await error.context.json(); msg=j.error||msg; }catch(_){} throw new Error(msg); }
   if(data&&data.error) throw new Error(data.error); return data; }
 const toLocal = ts=>ts?isoLocal(new Date(ts)):null;
 let lastLoad=0;

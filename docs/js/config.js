@@ -19,8 +19,8 @@ window.NIS_CONFIG = {
   // Must match the USERNAME_DOMAIN secret on the manage-users function.
   usernameDomain: "users.nis-skilltree.org",
 
-  // true = people must choose their own password the first time they sign in with the starter password
-  forcePasswordChange: true
+  // true = people must choose their own password the first time they sign in; false = they can keep the starter password until they click "Change password"
+  forcePasswordChange: false
 };
 (function(c){
   if(c.mode!=="auto") return;

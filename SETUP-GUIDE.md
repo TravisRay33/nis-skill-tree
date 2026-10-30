@@ -5,7 +5,7 @@ About 30 minutes, start to finish. Everything here is free and runs outside UNL 
 - **GitHub** holds the code and its full history while we develop. It also shows a sample-data preview of the site.
 - **Supabase** stores the real data and handles sign-in.
 - **Netlify** hosts the finished site that testers and staff use.
-- Nobody needs a UNL login. People sign in with their **NIS username** and a **starter password** you give them. The first time they sign in, the site asks them to choose their own password.
+- Nobody needs a UNL login. People sign in with their **NIS username** and a **starter password** you give them. They can keep it or pick their own any time with the **Change password** button.
 
 Files you will use (all in this folder):
 
@@ -69,14 +69,15 @@ This lets you add people and reset passwords from inside the site.
 1. Open **Edge Functions** in the sidebar, then **Deploy a new function > Via Editor**.
 2. Name it exactly `manage-users`.
 3. Delete the sample code, paste everything from `supabase/4_manage-users_edge_function.ts`, and click **Deploy function**.
-4. Open **Edge Functions > Secrets** and add two secrets:
+4. Open the function's **Details** (or settings) and turn **off** **Verify JWT** (it may say "Enforce JWT verification" or "Verify JWT with legacy secret"). Click **Save**. The function checks that the caller is a signed-in admin by itself, and with this left on, the browser can't reach it.
+5. Open **Edge Functions > Secrets** and add two secrets:
 
    | Key | Value |
    | --- | --- |
    | `DEFAULT_PASSWORD` | the starter password everyone gets, at least 8 characters (for example `NISskills-2026`) |
-   | `USERNAME_DOMAIN` | `users.nis-skilltree.org` |
+   | `USERNAME_DOMAIN` | `users.nis-skilltree.org` (note the **s** in users; it must match `usernameDomain` in `config.js`) |
 
-5. Click **Save**.
+6. Click **Save**.
 
 ## 6. Connect the site to your project
 
@@ -107,7 +108,7 @@ This lets you add people and reset passwords from inside the site.
 1. Open your Netlify link and sign in with your username and password from step 4.
 2. **Set area leads:** Skill tree > pick an area > **Edit tree** > choose the **Area lead** > **Save area**. (Leads need to be added as people first, see the next step.)
 3. **Add people:** **Coverage & admin > People**. Enter each person's name, NIS username, role, and home area, then click **Add person**. They get the starter password from step 5.
-4. Send each tester: the link, their username, and the starter password. On first sign-in they must choose a new password.
+4. Send each tester: the link, their username, and the starter password. They can change it any time with **Change password**. (To require a new password at first sign-in instead, set `forcePasswordChange: true` in `docs/js/config.js`.)
 
 **Forgot password?** As an admin, click **Reset password** next to their name. They can then sign in with the starter password again and pick a new one.
 
@@ -138,6 +139,7 @@ Editing skills, areas, and people does **not** need a release. That happens insi
 | "Almost there" page | `config.js` is still missing the URL or key (step 6). |
 | "Username or password is incorrect" | Check the username. Admins can reset the password. |
 | "You haven't been added to the skill tree yet" | The login exists but step 4's SQL (or Add person) didn't run for them. |
+| Adding a person says "Failed to send a request to the Edge Function" or "Couldn't reach" | Check the function is named exactly `manage-users` and deployed, then turn off **Verify JWT** in its Details and save. |
 | Adding a person fails with "Invalid JWT" or 401 | In **Edge Functions > manage-users > Details**, turn off **Verify JWT** and save. The function checks admin sign-in itself. |
 | Adding a person says to set `DEFAULT_PASSWORD` | Add the secret in step 5. |
 | "No areas yet" | Run `2_starter_content.sql` (step 2), or add an area from the site. |
