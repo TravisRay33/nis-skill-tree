@@ -1,5 +1,5 @@
 // NIS Skill Tree: "manage-users" Edge Function
-// Lets an admin add people (username + default password) and reset passwords from the site.
+// Lets staff add people (username + default password), approve account requests, and reset passwords from the site.
 // Deploy: Supabase dashboard > Edge Functions > Deploy a new function > Via Editor.
 //   Name it exactly:  manage-users
 //   Paste this whole file, then Deploy.
@@ -36,9 +36,17 @@ Deno.serve(async (req) => {
     const { data: { user } } = token ? await admin.auth.getUser(token) : { data: { user: null } };
     if (!user) return json({ error: "Please sign in again." }, 401);
     const { data: me } = await admin.from("people").select("name, role, active").eq("id", user.id).single();
-    if (!me || me.role !== "admin" || !me.active) return json({ error: "Admins only." }, 403);
+    if (!me || me.role !== "admin" || !me.active) return json({ error: "Staff only." }, 403);
 
     const body = await req.json();
+
+    // Approving a "Create an NIS Skill account" request = creating the person from the request's name and username
+    let request: { id: number; name: string; username: string } | null = null;
+    if (body.action === "approveRequest") {
+      const { data: r } = await admin.from("account_requests").select("id, name, username, status").eq("id", body.request_id).single();
+      if (!r || r.status !== "pending") return json({ error: "That request was already handled." }, 400);
+      request = r; body.action = "create"; body.username = r.username; body.name = r.name;
+    }
 
     if (body.action === "create") {
       const username = String(body.username ?? "").trim().toLowerCase();
@@ -46,7 +54,7 @@ Deno.serve(async (req) => {
         return json({ error: "Usernames can use letters, numbers, dots, dashes and underscores (2 to 40 characters)." }, 400);
       }
       const name = String(body.name ?? "").trim() || username;
-      const role = ["admin", "lead", "intern"].includes(body.role) ? body.role : "intern";
+      const role = ["admin", "intern"].includes(body.role) ? body.role : "intern";
       const { data: created, error } = await admin.auth.admin.createUser({
         email: `${username}@${DOMAIN}`, password: DEFAULT_PASSWORD, email_confirm: true, user_metadata: { username },
       });
@@ -59,7 +67,12 @@ Deno.serve(async (req) => {
         await admin.auth.admin.deleteUser(created.user.id);
         return json({ error: rowError.message }, 400);
       }
-      await admin.from("activity_log").insert({ actor: user.id, text: `${me.name} added ${name} (${username})` });
+      if (request) {
+        await admin.from("account_requests").update({ status: "approved", reviewed_by: user.id, reviewed_at: new Date().toISOString(), person: created.user.id }).eq("id", request.id);
+        await admin.from("activity_log").insert({ actor: user.id, text: `${me.name} approved the account request from ${name} (${username})` });
+      } else {
+        await admin.from("activity_log").insert({ actor: user.id, text: `${me.name} added ${name} (${username})` });
+      }
       return json({ ok: true, id: created.user.id });
     }
 

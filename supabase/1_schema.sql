@@ -218,7 +218,7 @@ language sql security definer set search_path = public as $$
   update people set must_change_password = false where id = auth.uid()
 $$;
 
--- ============ ACTIONS: area leads and admins ============
+-- ============ ACTIONS: staff ============
 create or replace function public.review_request(p_id bigint, p_approve boolean, p_note text default '') returns void
 language plpgsql security definer set search_path = public as $$
 declare r requests; s skills;
@@ -226,7 +226,7 @@ begin
   select * into r from requests where id = p_id;
   if not found or r.status <> 'requested' then raise exception 'That request was already handled.'; end if;
   select * into s from skills where id = r.skill;
-  if not can_manage_area(s.area) then raise exception 'Only the area lead or an admin can review this request.'; end if;
+  if not can_manage_area(s.area) then raise exception 'Only staff can review this request.'; end if;
   update requests set status = case when p_approve then 'approved' else 'returned' end,
          reviewer = auth.uid(), reviewed_at = now(), note = coalesce(p_note, '')
    where id = p_id;
@@ -242,7 +242,7 @@ create or replace function public.add_skill(p_area text, p_tier text, p_kind tex
 language plpgsql security definer set search_path = public as $$
 declare v_id text; v_sort int;
 begin
-  if not can_manage_area(p_area) then raise exception 'Only the area lead or an admin can edit this area.'; end if;
+  if not can_manage_area(p_area) then raise exception 'Only staff can edit this area.'; end if;
   if p_kind not in ('req','el') or p_tier not in ('bronze','silver','gold') then raise exception 'Invalid tier or type.'; end if;
   v_id := p_area || '-' || p_tier || '-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 8);
   select coalesce(max(sort), 0) + 1 into v_sort from skills where area = p_area;
@@ -262,7 +262,7 @@ declare s skills;
 begin
   select * into s from skills where id = p_id;
   if not found then raise exception 'Skill not found.'; end if;
-  if not can_manage_area(s.area) then raise exception 'Only the area lead or an admin can edit this area.'; end if;
+  if not can_manage_area(s.area) then raise exception 'Only staff can edit this area.'; end if;
   if coalesce(trim(p_name), '') = '' then raise exception 'A name is required.'; end if;
   update skills set
     name = trim(p_name),
@@ -286,7 +286,7 @@ declare s skills;
 begin
   select * into s from skills where id = p_id;
   if not found then raise exception 'Skill not found.'; end if;
-  if not can_manage_area(s.area) then raise exception 'Only the area lead or an admin can edit this area.'; end if;
+  if not can_manage_area(s.area) then raise exception 'Only staff can edit this area.'; end if;
   if s.kind = 'cap' then raise exception 'Capstones cannot be retired.'; end if;
   update skills set retired = p_retired, updated_at = now() where id = p_id;
   if p_retired then
@@ -299,7 +299,7 @@ end $$;
 create or replace function public.set_rule(p_area text, p_tier text, p_n int) returns void
 language plpgsql security definer set search_path = public as $$
 begin
-  if not can_manage_area(p_area) then raise exception 'Only the area lead or an admin can edit this area.'; end if;
+  if not can_manage_area(p_area) then raise exception 'Only staff can edit this area.'; end if;
   insert into tier_rules(area, tier, electives_needed) values (p_area, p_tier, greatest(0, p_n))
   on conflict (area, tier) do update set electives_needed = excluded.electives_needed;
   perform log_activity(pname(auth.uid()) || ' set ' || (select name from areas where id = p_area) || ' ' || p_tier || ' to need ' || greatest(0, p_n) || ' electives');
@@ -352,7 +352,7 @@ begin
       insert into skills(id, area, tier, kind, name, description, steps, est_time)
       values (v_id || '-' || t || '-cap', v_id, t, 'cap',
         case t when 'bronze' then 'Teach the ' || trim(p_name) || ' SOP' when 'silver' then 'Lead an advanced ' || trim(p_name) || ' workshop' else 'Develop a new ' || trim(p_name) || ' workshop' end,
-        'Describe the capstone.', '["Plan","Deliver with the area lead present","Request sign-off"]'::jsonb, 'TBD');
+        'Describe the capstone.', '["Plan","Deliver with a staff member present","Request sign-off"]'::jsonb, 'TBD');
     end loop;
     perform log_activity(pname(auth.uid()) || ' added area ' || trim(p_name));
   else
@@ -360,7 +360,6 @@ begin
     if not found then raise exception 'Area not found.'; end if;
     perform log_activity(pname(auth.uid()) || ' updated area ' || trim(p_name));
   end if;
-  update people set role = 'lead' where id = p_lead and role = 'intern';
   return v_id;
 end $$;
 
@@ -371,7 +370,7 @@ begin
   if not is_admin() then raise exception 'Admins only.'; end if;
   select * into old from people where id = p_id;
   if not found then raise exception 'Person not found.'; end if;
-  if p_id = auth.uid() and (p_role <> 'admin' or not p_active) then raise exception 'You cannot remove your own admin access.'; end if;
+  if p_id = auth.uid() and (p_role <> 'admin' or not p_active) then raise exception 'You cannot remove your own staff access.'; end if;
   if p_role not in ('admin','lead','intern') then raise exception 'Invalid role.'; end if;
   update people set name = coalesce(nullif(trim(p_name), ''), old.name), role = p_role, home_area = p_home, end_date = p_end, active = p_active
    where id = p_id;
@@ -379,6 +378,19 @@ begin
     perform log_activity(pname(auth.uid()) || case when p_active then ' reactivated ' else ' deactivated ' end || old.name);
   elsif old.role <> p_role then
     perform log_activity(old.name || ' is now ' || p_role);
+  end if;
+end $$;
+
+-- Staff add a skill to their own record directly (no request, no sign-off). Interns still request sign-off.
+create or replace function public.add_own_skill(p_skill text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not is_admin() then raise exception 'Only staff can add skills to their own record. Please request a sign-off.'; end if;
+  if not exists (select 1 from skills where id = p_skill and not retired) then raise exception 'Skill not found.'; end if;
+  if award(auth.uid(), p_skill, 'self') then
+    update requests set status = 'approved', reviewer = auth.uid(), reviewed_at = now(), note = 'Added by staff'
+     where person = auth.uid() and skill = p_skill and status = 'requested';
+    perform log_activity(pname(auth.uid()) || ' added ' || (select name from skills where id = p_skill) || ' to their own skills');
   end if;
 end $$;
 
@@ -390,7 +402,7 @@ begin
            where n.nspname = 'public' and p.proname in (
              'is_active_user','is_admin','can_manage_area','pname','log_activity','capstone_unlocked','award','take_away',
              'request_signoff','withdraw_request','set_interest','password_changed','review_request','add_skill','save_skill',
-             'set_retired','set_rule','grant_skill','revoke_skill','grant_tier','save_area','update_person') loop
+             'set_retired','set_rule','grant_skill','revoke_skill','grant_tier','save_area','update_person','add_own_skill') loop
     execute format('revoke all on function %s from public, anon', f.sig);
     if f.proname in ('log_activity','award','take_away') then
       execute format('revoke all on function %s from authenticated', f.sig);   -- internal only
@@ -399,3 +411,38 @@ begin
     end if;
   end loop;
 end $$;
+
+-- ============ ACCOUNT REQUESTS (sign-in page > Create an NIS Skill account) ============
+create table if not exists public.account_requests (
+  id           bigint generated always as identity primary key,
+  name         text not null check (char_length(name) between 1 and 80),
+  username     text not null check (username ~ '^[a-z0-9._-]{2,40}$'),
+  status       text not null default 'pending' check (status in ('pending','approved','declined')),
+  created_at   timestamptz not null default now(),
+  reviewed_by  uuid references public.people(id) on delete set null,
+  reviewed_at  timestamptz,
+  person       uuid references public.people(id) on delete set null
+);
+create unique index if not exists account_requests_one_pending on public.account_requests(username) where status = 'pending';
+
+-- only staff can see requests; nobody writes to the table directly
+alter table public.account_requests enable row level security;
+drop policy if exists "staff can read account requests" on public.account_requests;
+create policy "staff can read account requests" on public.account_requests for select to authenticated using (public.is_admin());
+revoke all on public.account_requests from anon;
+revoke insert, update, delete, truncate on public.account_requests from authenticated;
+grant select on public.account_requests to authenticated;
+
+-- staff decline a request (approving happens in the manage-users Edge Function, which creates the sign-in)
+create or replace function public.decline_account_request(p_id bigint) returns void
+language plpgsql security definer set search_path = public as $$
+declare r account_requests;
+begin
+  if not is_admin() then raise exception 'Only staff can review account requests.'; end if;
+  update account_requests set status = 'declined', reviewed_by = auth.uid(), reviewed_at = now()
+   where id = p_id and status = 'pending' returning * into r;
+  if r.id is null then raise exception 'That request was already handled.'; end if;
+  perform log_activity(pname(auth.uid()) || ' declined the account request from ' || r.name || ' (' || r.username || ')');
+end $$;
+revoke all on function public.decline_account_request(bigint) from public, anon;
+grant execute on function public.decline_account_request(bigint) to authenticated;

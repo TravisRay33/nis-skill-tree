@@ -6,6 +6,7 @@ const S = {
   requests:[],       // {id,pid,sid,status,date,reviewer,note}
   interests:new Set(),
   events:[],        // {pid,sid,type:'earned'|'removed',at,by,source} - full history for growth reports
+  accountReqs:[],   // {id,name,username,date,status} - "Create an NIS Skill account" requests
   log:[]
 };
 const key=(p,s)=>p+"|"+s;
@@ -36,7 +37,7 @@ function seed(){
     AREA_DEFS.forEach(a=>{
       const home = p.home===a.id;
       const T = AREAS[a.id].tiers;
-      if(p.role==="lead" && a.lead===p.id){
+      if(p.role==="admin" && a.lead===p.id){
         ["bronze","silver"].forEach(t=>{[...T[t].req,...T[t].el,T[t].cap].forEach(s=>grant(p.id,s,"travis"));});
         grant(p.id,T.gold.req[0],"travis");
         if(R()<.5) grant(p.id,T.gold.req[1],"travis");
@@ -52,7 +53,7 @@ function seed(){
         if(capUnlocked(p.id,a.id,"silver") && R()<.6) grant(p.id,T.silver.cap,a.lead);
         T.gold.el.forEach(s=>{if(R()<.06)grant(p.id,s,a.lead);});
       } else {
-        const pr = p.role==="admin"?.35:p.role==="lead"?.2:.12;
+        const pr = p.role==="admin"?.25:.12;
         [...T.bronze.req,...T.bronze.el].forEach(s=>{if(R()<pr)grant(p.id,s,a.lead);});
         if(p.role==="admin" && capUnlocked(p.id,a.id,"bronze")) grant(p.id,T.bronze.cap,a.lead);
       }
@@ -60,12 +61,13 @@ function seed(){
   });
   // Jordan (leaving) is the extra Woodshop Gold holder to show graduation risk
   ["wood-gold-r1","wood-gold-e2","wood-silver-cap","wood-silver-r1","wood-silver-r2","wood-silver-e1","wood-silver-e3"].forEach(s=>grant("jordan",s,"dana"));
-  ["metal-silver-r1","metal-silver-r2","metal-silver-e3","metal-silver-e2","metal-silver-cap","metal-gold-e1"].forEach(s=>grant("ben",s,"marcus"));
+  ["metal-silver-r1","metal-silver-r2","metal-silver-e3","metal-silver-e2","metal-silver-cap","metal-gold-e1"].forEach(s=>grant("ben",s,"dana"));
   // pending requests
-  [["chris","wood-silver-r1"],["alexis","rp-silver-r1"],["maya","tex-silver-r2"],["avery","rp-bronze-e3"],["taylor","cer-silver-r1"],["riley","wood-bronze-r1"]]
+  [["chris","wood-silver-r1"],["alexis","laser-silver-r1"],["maya","tex-silver-r2"],["avery","elec-bronze-e3"],["taylor","cer-silver-r1"],["riley","wood-bronze-r1"]]
     .forEach(([p,s],i)=>{ if(!has(p,s)) S.requests.push({id:reqSeq++,pid:p,sid:s,status:"requested",date:daysAgo(i+1),reviewer:null,note:""}); });
   seedDates();
-  [["chris","wood-gold-r1"],["avery","rp-silver-r1"],["maya","des-bronze-r1"],["alexis","metal-bronze-r1"],["riley","rp-bronze-r1"]].forEach(([p,s])=>S.interests.add(key(p,s)));
+  S.accountReqs.push({id:1,name:"Jamie Fox",username:"jfox2",date:daysAgo(1),status:"pending"});
+  [["chris","wood-gold-r1"],["avery","elec-silver-r1"],["maya","des-bronze-r1"],["alexis","metal-bronze-r1"],["riley","rp-bronze-r1"]].forEach(([p,s])=>S.interests.add(key(p,s)));
 }
 
 /* ============ LOGIC ============ */
@@ -85,13 +87,15 @@ function progress(pid,area,tier){
   const e=el.filter(s=>has(pid,s)).length;
   return {r, e:Math.min(e,elN), reqN:req.length, elN, unlocked: r>=req.length && e>=elN && (req.length+elN)>0, earned: has(pid,T.cap)};
 }
-const canEdit = (u,area)=> u.role==="admin" || (u.role==="lead" && AREAS[area]?.lead===u.id);
+const isStaff = u=> u?.role==="admin" || u?.role==="lead";
+const canEdit = (u,area)=> isStaff(u);
 let idSeq=1; const newId = p=>`${p}-new${idSeq++}`;
 const capUnlocked=(p,a,t)=>progress(p,a,t).unlocked;
 function topTier(pid,area){ let top=null; TIERS.forEach(t=>{ if(has(pid,AREAS[area].tiers[t].cap)) top=t; }); return top; }
 const me = ()=>person(S.user);
-const leadName = areaId=>person(AREAS[areaId]?.lead)?.name||"the area lead";
-const canApprove = (u,sid)=> u.role==="admin" || (u.role==="lead" && AREAS[SKILLS[sid].area].lead===u.id);
+const leadName = areaId=>{ const n=person(AREAS[areaId]?.lead)?.name; return n?`NIS staff (primary: ${n})`:"NIS staff"; };
+const primaryAreas = pid=>areaList().filter(a=>a.lead===pid);
+const canApprove = (u,sid)=> isStaff(u);
 const initials = n=>n.split(" ").map(x=>x[0]).join("").slice(0,2);
 const toDate = d=>new Date(String(d).length>10?d:d+"T00:00");
 const fmt = d=>toDate(d).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
@@ -106,19 +110,21 @@ function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",
 
 function renderUserSel(){
   if(LIVE){ const u=me(); $("#who").innerHTML = u?`<span>Signed in as <b>${esc(u.name)}</b></span><button class="btn small" data-act="pwForm">Change password</button><button class="btn small" data-act="signout">Sign out</button>`:""; return; }
-  $("#userSel").innerHTML = ["admin","lead","intern"].map(r=>`<optgroup label="${ROLE_NAME[r]}">`+
-    PEOPLE.filter(p=>p.role===r&&p.active).map(p=>`<option value="${p.id}" ${p.id===S.user?"selected":""}>${esc(p.name)}${r==="lead"?" ("+AREAS[p.home].name+")":""}</option>`).join("")+`</optgroup>`).join("");
+  $("#userSel").innerHTML = ["admin","intern"].map(r=>`<optgroup label="${ROLE_NAME[r]}">`+
+    PEOPLE.filter(p=>p.role===r&&p.active).map(p=>`<option value="${p.id}" ${p.id===S.user?"selected":""}>${esc(p.name)}${r==="admin"&&primaryAreas(p.id).length?" ("+primaryAreas(p.id).map(a=>a.name).join(", ")+")":""}</option>`).join("")+`</optgroup>`).join("")
+    + `<optgroup label="Not signed in"><option value="__out">Sign-in page (preview)</option></optgroup>`;
 }
-function queueFor(u){ return S.requests.filter(r=>r.status==="requested" && canApprove(u,r.sid)); }
+const pendingAccounts = ()=>S.accountReqs.filter(r=>r.status==="pending");
+function queueFor(u){ const mine=r=>AREAS[SKILLS[r.sid]?.area]?.lead===u.id?0:1; return S.requests.filter(r=>r.status==="requested" && canApprove(u,r.sid)).sort((a,b)=>mine(a)-mine(b)); }
 function renderNav(){
-  const u=me(); const items=[["tree","Skill tree"],["profile","My profile"]];
-  if(u.role!=="intern") items.push(["approvals","Approvals"]);
-  if(u.role==="admin") items.push(["admin","Coverage & admin"],["growth","Growth"]);
+  const u=me(); const items=[["tree","Skills"],["profile","My profile"]];
+  if(isStaff(u)) items.push(["approvals","Approvals"]);
+  if(isStaff(u)) items.push(["admin","Coverage & admin"],["growth","Growth"]);
   if(!items.find(i=>i[0]===S.view)) S.view="tree";
-  const q=queueFor(u).length;
+  const q=queueFor(u).length+(isStaff(u)?pendingAccounts().length:0);
   $("#nav").innerHTML = items.map(([v,l])=>`<button class="${S.view===v?"on":""}" data-view="${v}">${l}${v==="approvals"&&q?`<span class="ct">${q}</span>`:""}</button>`).join("");
 }
-function render(){ if(!areaList().length){ renderNav(); $("#main").innerHTML=`<div class="card empty">No areas yet. ${LIVE?"Run 2_starter_content.sql in Supabase, or ask an admin to add an area.":""}</div>`+(me()?.role==="admin"?`<div style="text-align:center;margin-top:10px"><button class="btn primary" data-act="addArea">+ Add the first area</button></div>`:""); return; }
+function render(){ applyAreaColors(); if(!areaList().length){ renderNav(); $("#main").innerHTML=`<div class="card empty">No areas yet. ${LIVE?"Run 2_starter_content.sql in Supabase, or ask an admin to add an area.":""}</div>`+(me()?.role==="admin"?`<div style="text-align:center;margin-top:10px"><button class="btn primary" data-act="addArea">+ Add the first area</button></div>`:""); return; }
   renderNav(); ({tree:renderTree,profile:renderProfile,approvals:renderApprovals,admin:renderAdmin,growth:renderGrowth})[S.view](); if(S.selected) renderDrawer(); }
 
 /* ============ TREE ============ */
@@ -156,12 +162,12 @@ function renderTree(){
   if(!AREAS[S.area]) S.area=areaList()[0].id;
   const a=AREAS[S.area], u=me(), editable=canEdit(u,a.id);
   if(!editable) S.edit=false;
-  const tabs = areaList().map(x=>{const tt=topTier(u.id,x.id);return `<button class="${x.id===S.area?"on":""}" data-area="${x.id}">${esc(x.name)}${tt?`<span class="chip ${tt}" style="padding:0 6px;font-size:10px">${TIER_NAME[tt][0]}</span>`:""}</button>`}).join("")
-     + (S.edit && u.role==="admin" ? `<button data-act="addArea" style="border-style:dashed">+ New area</button>`:"");
+  const tabs = areaList().map(x=>{const tt=topTier(u.id,x.id);return `<button class="${x.id===S.area?"on":""}" data-area="${x.id}" style="${acVars(x.id)}"><i class="adot"></i>${esc(x.name)}${tt?`<span class="chip ${tt}" style="padding:0 6px;font-size:10px">${TIER_NAME[tt][0]}</span>`:""}</button>`}).join("")
+     + (S.edit && isStaff(u) ? `<button data-act="addArea" style="border-style:dashed">+ New area</button>`:"");
   const retired = Object.values(SKILLS).filter(s=>s.area===a.id && s.retired);
   $("#main").innerHTML = `
    <div class="toolrow">
-     <div><h2>${esc(a.name)}</h2><div class="muted">Area lead: ${esc(person(a.lead)?.name||"none")} · Each tier: all required skills + the set number of electives unlock the capstone. Tiers can be earned in any order.</div></div>
+     <div><h2>${esc(a.name)}</h2><div class="muted">Primary staff: <b>${esc(person(a.lead)?.name||"none yet")}</b> · Each tier: all required skills + the set number of electives unlock the capstone. Tiers can be earned in any order.</div></div>
      <div style="display:flex;gap:12px;align-items:center">
        ${S.edit?"":`<label class="switch"><input type="checkbox" id="covT" ${S.coverage?"checked":""}> Show team coverage</label>`}
        ${editable?`<button class="btn ${S.edit?"primary":""}" data-act="toggleEdit">${S.edit?"Done editing":"Edit tree"}</button>`:""}
@@ -169,22 +175,27 @@ function renderTree(){
    </div>
    <div class="tabs">${tabs}</div>
    ${S.edit?editPanel(a,u,retired):""}
-   <div class="mapwrap" ${S.edit?'style="outline:2px dashed var(--accent);outline-offset:-2px"':""}>${treeSVG(a,u)}</div>
+   <div class="mapwrap" style="${acVars(a.id)};${S.edit?"outline:2px dashed var(--accent);outline-offset:-2px":""}">${treeSVG(a,u)}</div>
    <div class="legend" style="margin-top:10px">
      ${S.edit ? `<span><b>Edit mode:</b> click any node to rename it, change its details, switch required/elective, or retire it. Renames update everyone's records automatically.</span>`
      : S.coverage
        ? `<span><i style="background:var(--cov0);border-color:var(--cov0)"></i>0 holders</span><span><i style="background:var(--cov1);border-color:var(--cov1)"></i>1 holder (needs coverage)</span><span><i style="background:var(--cov2);border-color:var(--cov2)"></i>2</span><span><i style="background:var(--cov3);border-color:var(--cov3)"></i>3+</span>`
-       : `<span><i style="background:var(--bronze);border-color:var(--bronze)"></i>Earned by ${esc(u.name.split(" ")[0])}</span><span><i style="border-color:var(--pending)"></i>Sign-off requested</span><span><i></i>Not yet earned</span><span><i style="border-width:4px"></i>Required (circle)</span><span><i style="border-radius:3px"></i>Elective (square)</span><span>Hexagon = capstone</span>`}
+       : `<span><i style="background:var(--a-${a.id});border-color:var(--a-${a.id}-line);border-radius:3px"></i>Earned by ${esc(u.name.split(" ")[0])}</span><span><i style="border-color:var(--pending)"></i>Sign-off requested</span><span><i></i>Not yet earned</span><span><i style="border-width:3px;border-radius:3px"></i>Required (square)</span><span><i></i>Elective (circle)</span><span>Hexagon = capstone (bronze, silver, gold)</span>`}
    </div>`;
 }
 function editPanel(a,u,retired){
   const staff=PEOPLE.filter(p=>p.active&&p.role!=="intern");
   return `<div class="card" style="margin-bottom:12px;border-color:var(--accent)">
     <div class="toolrow"><h3 style="margin:0">Editing ${esc(a.name)}</h3><span class="muted" style="font-size:12px">Changes go live immediately for everyone.</span></div>
-    ${u.role==="admin"?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+    ${isStaff(u)?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
        <label>Area name <input id="areaName" value="${esc(a.name)}"></label>
-       <label>Area lead <select id="areaLead">${staff.map(p=>`<option value="${p.id}" ${p.id===a.lead?"selected":""}>${esc(p.name)}</option>`).join("")}</select></label>
+       <label>Primary staff <select id="areaLead"><option value="">None</option>${staff.map(p=>`<option value="${p.id}" ${p.id===a.lead?"selected":""}>${esc(p.name)}</option>`).join("")}</select></label>
        <button class="btn small" data-act="saveArea">Save area</button></div>`:""}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+       <b style="font-size:13px">Area colour</b>
+       <div class="swatches">${AREA_PALETTE.map(p=>`<button type="button" title="${p.name} ${p.hex}" aria-label="${p.name}" data-act="areaColor" data-color="${p.hex}" class="${areaColor(a.id).toLowerCase()===p.hex?"on":""}" style="background:${p.hex}"></button>`).join("")}</div>
+       <label style="font-size:13px">Custom <input type="color" id="areaColorPick" value="${areaColor(a.id)}" style="width:44px;height:30px;padding:2px;vertical-align:middle"></label>
+       <span class="muted" style="font-size:12px">Sets this area's colour on the Skill tree tab, every profile web and the header. Scarlet is reserved for buttons.</span></div>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
       ${TIERS.map(t=>{const T=a.tiers[t];const nEl=live(T.el).length;return `<div style="background:var(--${t}-soft);border-radius:10px;padding:10px">
         <b style="color:var(--${t})">${TIER_NAME[t]}</b> <span class="muted" style="font-size:12px">${live(T.req).length} required · ${nEl} electives</span>
@@ -227,13 +238,13 @@ function nodeSVG(id,p,u){
   let fill="var(--node-bg)", stroke=`var(--${t})`, inner="";
   if(S.edit){ inner=`<text x="${p.x}" y="${p.y+5}" text-anchor="middle" font-size="13" font-weight="700" fill="var(--${t})">✎</text>`; }
   else if(S.coverage){ fill=covColor(n); stroke=covColor(n); inner=`<text x="${p.x}" y="${p.y+5}" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">${n}</text>`; }
-  else if(mine){ fill=`var(--${t})`; inner=`<text x="${p.x}" y="${p.y+6}" text-anchor="middle" font-size="17" font-weight="800" fill="#fff">✓</text>`; }
+  else if(mine){ fill="var(--ac)"; stroke="var(--ac-line)"; inner=`<text x="${p.x}" y="${p.y+6}" text-anchor="middle" font-size="17" font-weight="800" fill="var(--ac-on)">✓</text>`; }
   else if(pend){ stroke="var(--pending)"; inner=`<text x="${p.x}" y="${p.y+5}" text-anchor="middle" font-size="16" font-weight="800" fill="var(--pending)">…</text>`; }
-  const sw = sk.kind==="req"?5:3.5, isEl = sk.kind==="el";
+  const sw = sk.kind==="req"?4.5:3.5, isSq = sk.kind==="req";
   let lbl=""; wrap(sk.name).forEach((l,i)=>lbl+=`<text class="lbl" x="${p.x}" y="${p.y+r+15+i*13}" text-anchor="middle">${esc(l)}</text>`);
-  const sel = S.selected===id?(isEl?`<rect class="sel" x="${p.x-r-7}" y="${p.y-r-7}" width="${2*r+14}" height="${2*r+14}" rx="9"/>`:`<circle class="sel" cx="${p.x}" cy="${p.y}" r="${r+7}"/>`):"";
+  const sel = S.selected===id?(isSq?`<rect class="sel" x="${p.x-r-7}" y="${p.y-r-7}" width="${2*r+14}" height="${2*r+14}" rx="9"/>`:`<circle class="sel" cx="${p.x}" cy="${p.y}" r="${r+7}"/>`):"";
   const ringCls=`ring ${pend&&!S.coverage&&!S.edit?"pend":""}`;
-  const shape = isEl ? `<rect class="${ringCls}" x="${p.x-r+1}" y="${p.y-r+1}" width="${2*r-2}" height="${2*r-2}" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`
+  const shape = isSq ? `<rect class="${ringCls}" x="${p.x-r+1}" y="${p.y-r+1}" width="${2*r-2}" height="${2*r-2}" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`
                      : `<circle class="${ringCls}" cx="${p.x}" cy="${p.y}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
   return `<g class="node" data-sid="${id}" tabindex="0">${sel}${shape}${inner}${lbl}<title>${esc(sk.name)}</title></g>`;
 }
@@ -284,12 +295,13 @@ function renderDrawer(){
   const interested=PEOPLE.filter(p=>S.interests.has(key(p.id,sk.id)));
   const iWant=S.interests.has(key(u.id,sk.id));
   let action="";
-  if(mine){ const c=S.certs.get(key(u.id,sk.id)); action=`<div class="card" style="background:var(--${sk.tier}-soft);border-color:transparent"><b>You hold this ${sk.kind==="cap"?"capstone":"skill"}.</b><div class="muted">Signed off by ${esc(person(c.by)?.name||c.by)} on ${fmtDT(c.at)}${c.source==="override"?" (admin override)":""}</div></div>`; }
+  if(mine){ const c=S.certs.get(key(u.id,sk.id)); action=`<div class="card" style="background:var(--${sk.tier}-soft);border-color:transparent"><b>You hold this ${sk.kind==="cap"?"capstone":"skill"}.</b><div class="muted">Signed off by ${esc(person(c.by)?.name||c.by)} on ${fmtDT(c.at)}${c.source==="override"?" (staff override)":c.source==="self"?" (added by you, staff)":""}</div></div>`; }
   else if(pend){ action=`<div class="card" style="border-color:var(--pending)"><b style="color:var(--pending)">Sign-off requested</b><div class="muted">Sent ${fmt(pend.date)}. Waiting for ${esc(leadName(a.id))} to observe and approve.</div><button class="btn small" data-act="withdraw" data-id="${pend.id}" style="margin-top:8px">Withdraw request</button></div>`; }
   else if(sk.kind==="cap" && !pr.unlocked){ action=`<div class="card"><b>Capstone locked</b><div class="muted">Finish all ${pr.reqN} required skills (${pr.r}/${pr.reqN}) and any ${pr.elN} electives (${pr.e}/${pr.elN}) in ${esc(a.name)} ${TIER_NAME[sk.tier]} to unlock it.</div></div>`; }
+  else if(isStaff(u)){ action=`<button class="btn primary" data-act="selfAdd">Add to my skills</button> <span class="muted" style="font-size:12px">Staff skills are added right away, no sign-off needed.</span>`; }
   else { action=`<button class="btn primary" data-act="request">Request sign-off</button> <span class="muted" style="font-size:12px">Goes to ${esc(leadName(a.id))}</span>`; }
   const ret = S.requests.filter(r=>r.pid===u.id&&r.sid===sk.id&&r.status==="returned").slice(-1)[0];
-  const admin = u.role==="admin";
+  const admin = isStaff(u);
   $("#drawer").innerHTML = `
    <button class="x" data-act="close" aria-label="Close">×</button>
    <div><span class="pill ${sk.tier}">${TIER_NAME[sk.tier]}</span>${sk.kind==="req"?'<span class="pill req">Required</span>':sk.kind==="el"?'<span class="pill">Elective</span>':'<span class="pill" style="background:var(--ink);color:var(--panel)">Capstone</span>'}<span class="pill">${esc(a.name)}</span></div>
@@ -303,7 +315,7 @@ function renderDrawer(){
      ${hs.length?`<ul class="plist">${hs.map(p=>`<li><span class="av">${initials(p.name)}</span><span class="grow">${esc(p.name)}<br><span class="muted" style="font-size:12px">${ROLE_NAME[p.role]}${leaving(p)?` · leaving ${fmt(p.end)}`:""}</span></span>${admin?`<button class="btn small" data-act="remove" data-p="${p.id}">Remove</button>`:""}</li>`).join("")}</ul>`:`<div class="muted">No one holds this yet.</div>`}
    </div>
    <div class="sect"><h3>Want to learn (${interested.length})</h3>${interested.length?`<ul class="plist">${interested.map(p=>`<li><span class="av">${initials(p.name)}</span><span class="grow">${esc(p.name)}</span></li>`).join("")}</ul>`:'<div class="muted">No one yet.</div>'}</div>
-   ${admin?`<div class="sect"><h3>Admin override</h3><div class="muted" style="font-size:12px;margin-bottom:6px">Grant this to anyone directly, skipping the request and unlock rules.</div>
+   ${admin?`<div class="sect"><h3>Staff override</h3><div class="muted" style="font-size:12px;margin-bottom:6px">Grant this to anyone directly, skipping the request and unlock rules.</div>
      <div style="display:flex;gap:6px"><select id="grantSel" class="grow">${PEOPLE.filter(p=>!has(p.id,sk.id)).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select><button class="btn" data-act="grant">Grant</button></div></div>`:""}`;
   $("#drawer").classList.add("open");
 }
@@ -319,16 +331,21 @@ function renderProfile(){
   $("#main").innerHTML = `
    <div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
      <span class="av" style="width:56px;height:56px;font-size:18px">${initials(u.name)}</span>
-     <div class="grow"><h2>${esc(u.name)}</h2><div class="muted">${ROLE_NAME[u.role]} · Home area: ${esc(AREAS[u.home].name)}${u.end?` · Expected end: ${fmt(u.end)}`:""}</div></div>
+     <div class="grow"><h2>${esc(u.name)}</h2><div class="muted">${ROLE_NAME[u.role]} · ${isStaff(u)?`Primary on: ${esc(primaryAreas(u.id).map(a=>a.name).join(", ")||"no area yet")}`:`Home area: ${esc(AREAS[u.home]?.name||"none")}`}${u.end?` · Expected end: ${fmt(u.end)}`:""}</div></div>
      <div class="stat"><div class="n">${total}</div><div class="t">skills held</div></div>
+     <div class="printonly" style="width:100%">Nebraska Innovation Studio · Skill Tree profile · exported ${fmt(today)}</div>
+     <details class="dl noprint"><summary class="btn">Download ▾</summary><div class="dlmenu">
+       <button data-act="dlCSV"><b>Skills log (CSV)</b><small>Every skill you have earned or had removed, with dates and who signed it off. Opens in Excel.</small></button>
+       <button data-act="dlPDF"><b>Whole profile (PDF)</b><small>This page as a PDF. In the print window, choose "Save as PDF".</small></button>
+     </div></details>
    </div>
    <div class="card" style="margin-bottom:18px">
-     <div class="toolrow"><h3 style="margin:0">My skill tree</h3><span class="muted" style="font-size:12px">Bronze sits closest to the center, then Silver, then Gold. Lit nodes are earned. Click any node for details.</span></div>
+     <div class="toolrow"><h3 style="margin:0">My skill tree</h3><span class="muted" style="font-size:12px">Bronze sits closest to the center, then Silver, then Gold. Each area keeps its colour from the Skills tab. Click any node for details.</span></div>
      ${radialSVG(u)}
-     <div class="legend" style="justify-content:center;margin-top:6px"><span><i style="border-width:3px"></i>Required</span><span><i style="border-radius:3px"></i>Elective</span><span>Hexagon = capstone</span><span><i style="background:var(--bronze);border-color:var(--bronze)"></i>Earned</span><span><i style="background:var(--locked);border-color:var(--muted)"></i>Locked capstone</span></div>
+     <div class="legend" style="justify-content:center;margin-top:6px"><span><i style="border-radius:3px;border-width:3px"></i>Required (square tiles, all needed)</span><span><i></i>Elective (circles, pick N)</span><span><i style="background:var(--muted);border-color:var(--muted)"></i>Filled = earned, in the area's colour</span><span>Hexagon = capstone (bronze, silver, gold)</span></div>
    </div>
    <h3>Badge</h3>
-   <div class="medals" style="margin-bottom:18px">${areaList().map(a=>{const t=topTier(u.id,a.id);return `<div class="medal"><div class="m ${t||""}">${t?TIER_NAME[t].toUpperCase():"-"}</div><b>${esc(a.name)}</b><div class="muted" style="font-size:12px">${TIERS.filter(x=>has(u.id,AREAS[a.id].tiers[x].cap)).map(x=>TIER_NAME[x]).join(", ")||"No tier yet"}</div></div>`}).join("")}</div>
+   <div class="medals" style="margin-bottom:18px">${areaList().map(a=>{const t=topTier(u.id,a.id);return `<div class="medal" style="${acVars(a.id)}"><div class="m ${t||""}">${t?TIER_NAME[t].toUpperCase():"-"}</div><b>${esc(a.name)}</b><div class="muted" style="font-size:12px">${TIERS.filter(x=>has(u.id,AREAS[a.id].tiers[x].cap)).map(x=>TIER_NAME[x]).join(", ")||"No tier yet"}</div>${TIERS.filter(x=>has(u.id,AREAS[a.id].tiers[x].cap)).map(x=>`<button class="btn small certbtn noprint" data-act="cert" data-carea="${a.id}" data-ctier="${x}" title="Open a printable ${TIER_NAME[x]} certificate">${TIER_NAME[x]} certificate</button>`).join("")}</div>`}).join("")}</div>
    <div class="grid g2">
      <div class="card"><h3>Progress by area</h3>${areaList().map(a=>`<div style="margin-bottom:10px"><b>${esc(a.name)}</b>${TIERS.map(t=>{const p=progress(u.id,a.id,t);const pct=p.earned?100:Math.round((p.r+p.e)/(p.reqN+p.elN+1)*100);return `<div style="display:flex;justify-content:space-between;font-size:12px" class="muted"><span>${TIER_NAME[t]}</span><span>${p.earned?"Earned":p.unlocked?"Capstone ready":`Req ${p.r}/${p.reqN} · Elect ${p.e}/${p.elN}`}</span></div><div class="prog"><span style="width:${pct}%;background:var(--${t})"></span></div>`}).join("")}</div>`).join("")}</div>
      <div>
@@ -336,46 +353,175 @@ function renderProfile(){
        ${retiredHeld.length?`<div class="card" style="margin-bottom:14px"><h3>Retired skills on record (${retiredHeld.length})</h3><ul class="plist">${retiredHeld.map(sk=>`<li><span class="grow">${esc(sk.name)}<br><span class="muted" style="font-size:12px">${esc(AREAS[sk.area]?.name||"")} ${TIER_NAME[sk.tier]} · no longer on the tree</span></span></li>`).join("")}</ul></div>`:""}
        <div class="card"><h3>Want to learn (${want.length})</h3>${want.length?`<ul class="plist">${want.map(s=>{const hs=holders(s.id);return `<li><span class="grow"><a href="#" data-open="${s.id}">${esc(s.name)}</a><br><span class="muted" style="font-size:12px">Ask: ${hs.slice(0,3).map(p=>esc(p.name)).join(", ")||"no holders yet"}</span></span></li>`}).join("")}</ul>`:'<div class="muted">Mark skills with "I want to learn this" on the tree.</div>'}</div>
      </div>
-   </div>`;
+   </div>
+   ${historyCard(u)}`;
+}
+function historyRows(pid){
+  // every sign-off event for this person, newest first; certificates without a recorded date go last
+  const ev=S.events.filter(e=>e.pid===pid&&SKILLS[e.sid]).map(e=>({...e}));
+  const seen=new Set(ev.filter(e=>e.type==="earned").map(e=>e.sid));
+  [...S.certs].forEach(([k,c])=>{ const [p,sid]=k.split("|"); if(p===pid&&!seen.has(sid)&&SKILLS[sid]) ev.push({pid,sid,type:"earned",at:c.at,by:c.by,source:c.source}); });
+  return ev.sort((a,b)=>(b.at||"")>(a.at||"")?1:-1);
+}
+function historyCard(u){
+  const rows=historyRows(u.id);
+  const kindName=k=>k==="cap"?"Capstone":k==="req"?"Required":"Elective";
+  return `<div class="card history" style="margin-top:18px">
+    <div class="toolrow"><h3 style="margin:0">Your history</h3><span class="muted" style="font-size:12px">${rows.filter(r=>r.type==="earned").length} sign-offs · newest first</span></div>
+    ${rows.length?`<table><tr><th>Date</th><th>Skill</th><th>Area</th><th>Level</th><th>Type</th><th>Signed off by</th></tr>
+      ${rows.map(r=>{const sk=SKILLS[r.sid], a=AREAS[sk.area];return `<tr style="${r.type==="removed"?"opacity:.6":""}">
+        <td style="white-space:nowrap">${r.at?fmt(r.at):'<span class="muted">Not recorded</span>'}</td>
+        <td><a href="#" data-open="${sk.id}">${esc(sk.name)}</a>${r.type==="removed"?' <span class="pill flag">Removed</span>':""}${sk.retired?' <span class="pill">Retired</span>':""}</td>
+        <td><i class="sw" style="background:var(--a-${sk.area});border-radius:2px"></i>${esc(a?.name||"")}</td>
+        <td><span class="pill ${sk.tier}">${TIER_NAME[sk.tier]}</span></td>
+        <td>${kindName(sk.kind)}</td>
+        <td>${esc(person(r.by)?.name||r.by||"")}${r.source==="override"?' <span class="muted" style="font-size:11px">(staff override)</span>':r.source==="self"?' <span class="muted" style="font-size:11px">(self-added, staff)</span>':""}</td></tr>`}).join("")}</table>`
+      :'<div class="muted">No skills earned yet. Your sign-offs will show up here with their dates.</div>'}
+  </div>`;
+}
+/* CSV of one person's history */
+function csvMine(u){ download(`nis-skills_${u.name.replace(/\W+/g,"-").toLowerCase()}_${ymd(today)}.csv`,[["date","skill","area","level","type","event","signed_off_by"],
+  ...historyRows(u.id).map(r=>{const sk=SKILLS[r.sid];return [r.at||"",sk.name,AREAS[sk.area]?.name||"",TIER_NAME[sk.tier],sk.kind==="cap"?"capstone":sk.kind==="req"?"required":"elective",r.type,person(r.by)?.name||r.by||""];})]); }
+
+/* ============ CERTIFICATE ============ */
+function certificateHTML(u,areaId,tier){
+  const a=AREAS[areaId], T=a.tiers[tier], cap=S.certs.get(key(u.id,T.cap));
+  const date=cap?.at?toDate(cap.at).toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"}):"";
+  const metal={bronze:["#b5793f","#8a5a2b","#f5e9dc"],silver:["#8d98a4","#5f6b77","#eceff2"],gold:["#d2a21c","#9c7710","#fbf2d6"]}[tier];
+  const ac=areaColor(areaId), acInk=inkOn(ac,"#fefdfa");
+  const lead=person(a.lead)?.name||"";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${esc(u.name)} - ${esc(a.name)} ${TIER_NAME[tier]} certificate</title>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+@page{size:11in 8.5in;margin:0}
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:#e3e3e2}
+body{font-family:"Work Sans",Arial,sans-serif;color:#232323}
+.bar{position:sticky;top:0;background:#232323;color:#fff;padding:10px 16px;display:flex;gap:12px;align-items:center;justify-content:center;font-size:14px}
+.bar button{background:#d00000;color:#fff;border:0;border-radius:4px;padding:8px 14px;font:600 14px "Work Sans",sans-serif;cursor:pointer}
+.page{width:11in;height:8.5in;margin:24px auto;background:#fefdfa;position:relative;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+.frame{position:absolute;inset:.35in;border:3px solid ${metal[0]};outline:1px solid ${metal[0]};outline-offset:-10px}
+.stripe{position:absolute;left:0;right:0;top:0;height:.22in;background:#d00000}
+.stripe2{position:absolute;left:0;right:0;top:.22in;height:.07in;background:${ac}}
+.inner{position:absolute;inset:.75in .9in;display:flex;flex-direction:column;align-items:center;text-align:center}
+.org{font-size:13pt;font-weight:500;letter-spacing:.02em}
+.org b{display:block;font-size:22pt;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+h1{font-family:"Source Serif 4",Georgia,serif;font-weight:400;font-size:36pt;margin:.5in 0 .15in;letter-spacing:.01em}
+.pre{font-size:12pt;color:#6a6a68;margin:.12in 0 .04in}
+.name{font-family:"Source Serif 4",Georgia,serif;font-style:italic;font-size:38pt;line-height:1.1;border-bottom:1.5px solid #232323;padding:0 .3in .06in;min-width:6in}
+.what{font-size:17pt;margin:.3in 0 .1in;max-width:7.6in;line-height:1.45}
+.level{display:inline-block;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:${metal[1]}}
+.area{font-weight:700;color:${acInk}}
+.skills{font-size:9.5pt;color:#6a6a68;max-width:7.8in;line-height:1.5;margin-top:.08in}
+.foot{margin-top:auto;width:100%;display:flex;justify-content:space-between;align-items:flex-end}
+.sig{width:2.6in;text-align:center;font-size:10pt;color:#6a6a68}
+.sig .line{border-top:1px solid #232323;margin-bottom:4px;height:.45in}
+.sig .who{color:#232323;font-weight:600;font-size:11pt}
+.seal{width:2.6in;height:2.6in;border-radius:50%;background:radial-gradient(circle at 35% 30%,${metal[2]},${metal[0]} 70%);border:9px solid ${ac};display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;box-shadow:inset 0 -6px 0 rgba(0,0,0,.15)}
+.seal b{font-size:28pt;letter-spacing:.1em;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+.seal small{font-size:12pt;letter-spacing:.06em;margin-top:2px;max-width:2in;text-align:center;line-height:1.2;text-transform:uppercase;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+@media print{html,body{background:#fff}.bar{display:none}.page{margin:0;box-shadow:none}}
+</style></head><body>
+<div class="bar">Landscape, letter size. <button onclick="print()">Print or save as PDF</button></div>
+<div class="page"><div class="stripe"></div><div class="stripe2"></div><div class="frame"></div>
+ <div class="inner">
+  <div class="org"><b>Nebraska Innovation Studio</b></div>
+  <h1>Certificate of Skill Achievement</h1>
+  <div class="pre">This certifies that</div>
+  <div class="name">${esc(u.name)}</div>
+  <div class="what">has earned the <span class="level">${TIER_NAME[tier]}</span> level in <span class="area">${esc(a.name)}</span></div>
+  <div class="foot">
+   <div class="sig"><div class="line"></div><div class="who">${esc(lead)}</div>NIS staff, ${esc(a.name)}</div>
+   <div class="seal"><b>${TIER_NAME[tier].toUpperCase()}</b><small>${esc(a.name)}</small></div>
+   <div class="sig"><div class="line" style="display:flex;align-items:flex-end;justify-content:center;font-size:12pt;color:#232323">${date}</div><div class="who">Date awarded</div>Nebraska Innovation Studio</div>
+  </div>
+ </div></div>
+</body></html>`;
+}
+function openCertificate(u,areaId,tier){
+  const w=window.open(URL.createObjectURL(new Blob([certificateHTML(u,areaId,tier)],{type:"text/html"})),"_blank");
+  if(!w) toast("Your browser blocked the new tab. Allow pop-ups for this page, then try again.");
 }
 
 /* ============ PROFILE: RADIAL SKILL TREE ============ */
-const RING = {bronze:{s:125,c:180}, silver:{s:240,c:295}, gold:{s:355,c:410}};
+// Ring radii grow when there are more areas (narrower wedges) or longer rows of skills, so groups never overlap.
+let RING = {bronze:{s:152,c:208}, silver:{s:268,c:324}, gold:{s:384,c:440}};
+function sizeRings(areas){
+  const wedgeRad=2*Math.PI/Math.max(areas.length,1), fit=.78, tileW=2*NODE_R+1, step=2*NODE_R+1;
+  const rowPx=t=>Math.max(0,...areas.map(a=>{const nR=live(a.tiers[t].req).length,k=live(a.tiers[t].el).length;return nR*tileW+(nR&&k?16:0)+k*step;}));
+  let prev=0; const out={};
+  TIERS.forEach((t,i)=>{ const s=Math.max(i===0?152:prev+60, rowPx(t)/(wedgeRad*fit)); out[t]={s:Math.round(s),c:Math.round(s+56)}; prev=out[t].c; });
+  RING=out; return out;
+}
+const NODE_R = 9;
 function polar(r,deg){const a=(deg-90)*Math.PI/180;return {x:+(r*Math.cos(a)).toFixed(1),y:+(r*Math.sin(a)).toFixed(1)};}
+function arcPath(r,a0,a1){const p=polar(r,a0),q=polar(r,a1);return `M${p.x},${p.y} A${r},${r} 0 0 1 ${q.x},${q.y}`;}
+function sectorPath(r0,r1,a0,a1){const p=polar(r1,a0),q=polar(r1,a1),s=polar(r0,a1),e=polar(r0,a0);
+  return `M${e.x},${e.y} L${p.x},${p.y} A${r1},${r1} 0 0 1 ${q.x},${q.y} L${s.x},${s.y} A${r0},${r0} 0 0 0 ${e.x},${e.y}Z`;}
 function radialSVG(u){
-  const areas=areaList(), n=areas.length, wedge=360/n, span=Math.min(46,wedge*0.78);
-  let bg="", edges="", nodes="", labels="";
-  // tier rings
-  TIERS.forEach(t=>{ bg+=`<circle r="${RING[t].c}" fill="none" stroke="var(--${t})" stroke-opacity=".35" stroke-width="1.5" stroke-dasharray="3 5"/>`; });
+  const areas=areaList(), n=areas.length, wedge=360/n;
+  sizeRings(areas); const OUT=RING.gold.c+32, LBL=RING.gold.c+46, VB=LBL+30, VBX=LBL+175;
+  let bg="", edges="", nodes="", labels="", defs="";
+  const line=(a,b,lit,dash)=>`<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${lit?"var(--ac-line)":"var(--line)"}" stroke-width="${lit?3:1.3}" ${dash?'stroke-dasharray="3 4"':""}/>`;
   areas.forEach((a,ai)=>{
-    const c=ai*wedge;
-    // wedge divider
-    const d=polar(440,c-wedge/2); bg+=`<line x1="0" y1="0" x2="${d.x}" y2="${d.y}" stroke="var(--line)" stroke-width="1"/>`;
-    let parents=[{x:0,y:0,on:true}];
+    const c=ai*wedge, av=acVars(a.id);
+    // wedge: light tint of the area colour, thin divider
+    bg+=`<path d="${sectorPath(52,OUT,c-wedge/2,c+wedge/2)}" fill="var(--a-${a.id}-tint)" opacity=".85"/>`;
+    const d=polar(OUT,c-wedge/2); bg+=`<line x1="0" y1="0" x2="${d.x}" y2="${d.y}" stroke="var(--panel)" stroke-width="3"/>`;
+    let parent={x:0,y:0,on:true};
+    let g="";
     TIERS.forEach(t=>{
-      const T=a.tiers[t], ids=[...live(T.req),...live(T.el)], k=ids.length;
+      const T=a.tiers[t], R=RING[t].s, req=live(T.req), el=live(T.el), pr=progress(u.id,a.id,t);
       const capP=polar(RING[t].c,c), capOn=has(u.id,T.cap);
-      const pts=ids.map((id,i)=>({id,...polar(RING[t].s, k===1?c:c-span/2+span*i/(k-1)),on:has(u.id,id)}));
-      // edges: each parent -> each skill (parent is center or previous capstone); skill -> capstone
-      pts.forEach(p=>{ parents.forEach(pa=>{ const lit=p.on&&pa.on; edges+=`<line x1="${pa.x}" y1="${pa.y}" x2="${p.x}" y2="${p.y}" stroke="${lit?`var(--${t})`:"var(--line)"}" stroke-width="${lit?3:1.2}" ${lit?"":'stroke-opacity=".8"'}/>`; });
-        const lit=p.on&&capOn; edges+=`<line x1="${p.x}" y1="${p.y}" x2="${capP.x}" y2="${capP.y}" stroke="${lit?`var(--${t})`:"var(--line)"}" stroke-width="${lit?3:1.2}"/>`; });
-      if(!k) parents.forEach(pa=>{ edges+=`<line x1="${pa.x}" y1="${pa.y}" x2="${capP.x}" y2="${capP.y}" stroke="var(--line)" stroke-width="1.2" stroke-dasharray="3 4"/>`; });
-      pts.forEach(p=>{ const sk=SKILLS[p.id], fill=p.on?`var(--${t})`:"var(--node-bg)", stroke=p.on?`var(--${t})`:"var(--muted)", glow=p.on?`filter="url(#glow)"`:"";
-        const shape = sk.kind==="el" ? `<rect x="${p.x-7}" y="${p.y-7}" width="14" height="14" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="2" ${glow}/>` : `<circle cx="${p.x}" cy="${p.y}" r="8" fill="${fill}" stroke="${stroke}" stroke-width="${sk.kind==="req"?3:2}" ${glow}/>`;
-        nodes+=`<g class="cnode" data-open="${p.id}">${shape}<title>${esc(sk.name)} (${TIER_NAME[t]} ${sk.kind==="req"?"required":"elective"})${p.on?" - earned":""}</title></g>`; });
-      const pr=progress(u.id,a.id,t), cs=SKILLS[T.cap];
+      // Two groups side by side along the ring: REQUIRED (touching tapered tiles) then PICK N (touching circles)
+      const D=180/Math.PI, k=el.length, nR=req.length;
+      const tileW=2*NODE_R+1, step=(2*NODE_R+1);           // arc length per tile / per circle, in px
+      const gapPx=nR&&k?16:0, total=nR*tileW+gapPx+k*step;  // whole row, in px along the ring
+      let pos=c-total/2/R*D;                                // start angle (counter-clockwise end)
+      // required always comes first going clockwise, so neighbouring wedges never put two labels side by side
+      const bottom=false; let reqA0,reqA1,elA0,elA1;
+      if(!bottom){ reqA0=pos; reqA1=pos+nR*tileW/R*D; elA0=reqA1+gapPx/R*D; elA1=elA0+k*step/R*D; }
+      else { elA0=pos; elA1=pos+k*step/R*D; reqA0=elA1+gapPx/R*D; reqA1=reqA0+nR*tileW/R*D; }
+      const reqMid=(reqA0+reqA1)/2, elMid=(elA0+elA1)/2;
+      const reqPts=req.map((id,i)=>({id,a0:reqA0+i*tileW/R*D,a1:reqA0+(i+1)*tileW/R*D,on:has(u.id,id)}));
+      const elPts=el.map((id,i)=>({id,...polar(R,elA0+(i+.5)*step/R*D),on:has(u.id,id)}));
+      const reqMet=pr.r>=pr.reqN, met=pr.e>=pr.elN && k>0;
+      const H=NODE_R+3;
+      // edges: parent -> each group (inner edge), each group (outer edge) -> capstone
+      if(nR){ g+=line(parent,polar(R-H,reqMid),reqMet&&parent.on); g+=line(polar(R+H,reqMid),capP,reqMet&&capOn); }
+      if(k){ g+=line(parent,polar(R-H,elMid),met&&parent.on); g+=line(polar(R+H,elMid),capP,met&&capOn); }
+      if(!k&&!nR) g+=line(parent,capP,false,true);
+      // group label along the inside of the ring ("under" the group), flipped on the bottom half so it reads upright
+      const groupLabel=(mid,halfDeg,text,id)=>{ const flip=c>90&&c<270, lr=R-H-(flip?6:13), span=Math.max(halfDeg,48/lr*D);
+        const pa=polar(lr,flip?mid+span:mid-span), pb=polar(lr,flip?mid-span:mid+span);
+        defs+=`<path id="${id}" d="M${pa.x},${pa.y} A${lr},${lr} 0 0 ${flip?0:1} ${pb.x},${pb.y}"/>`;
+        labels+=`<text font-size="9.5" font-weight="700" letter-spacing=".5" fill="var(--a-${a.id}-ink)" class="lbl"><textPath href="#${id}" startOffset="50%" text-anchor="middle">${text}</textPath></text>`; };
+      if(nR) groupLabel(reqMid,(reqA1-reqA0)/2,"REQUIRED",`rq-${a.id}-${t}`);
+      if(k){ nodes+=`<path d="${arcPath(R,elA0+NODE_R/R*D,elA1-NODE_R/R*D)}" fill="none" stroke="${met?"var(--ac)":"var(--line)"}" stroke-opacity="${met?.35:1}" stroke-width="${2*NODE_R+8}" stroke-linecap="round"/>`;
+        groupLabel(elMid,(elA1-elA0)/2,`PICK ${pr.elN}`,`pk-${a.id}-${t}`); }
+      const glow=on=>on?'filter="url(#glow)"':"";
+      reqPts.forEach(p=>{ const sk=SKILLS[p.id], r0=R-NODE_R, r1=R+NODE_R;
+        nodes+=`<g class="cnode" data-open="${p.id}" style="${av}"><path d="${sectorPath(r0,r1,p.a0,p.a1)}" fill="${p.on?"var(--ac)":"var(--node-bg)"}" stroke="${p.on?"var(--ac-line)":"var(--muted)"}" stroke-width="2" stroke-linejoin="round" ${glow(p.on)}/><title>${esc(sk.name)} (${a.name}, ${TIER_NAME[t]} required)${p.on?" - earned":""}</title></g>`; });
+      elPts.forEach(p=>{ const sk=SKILLS[p.id];
+        nodes+=`<g class="cnode" data-open="${p.id}" style="${av}"><circle cx="${p.x}" cy="${p.y}" r="${NODE_R}" fill="${p.on?"var(--ac)":"var(--node-bg)"}" stroke="${p.on?"var(--ac-line)":"var(--muted)"}" stroke-width="1.8" ${glow(p.on)}/><title>${esc(sk.name)} (${a.name}, ${TIER_NAME[t]} elective, pick ${pr.elN} of ${k})${p.on?" - earned":""}</title></g>`; });
+      // capstone keeps its bronze / silver / gold colour
+      const cs=SKILLS[T.cap];
       const cfill=capOn?`var(--${t})`:pr.unlocked?"var(--node-bg)":"var(--locked)", cstroke=capOn||pr.unlocked?`var(--${t})`:"var(--muted)";
-      nodes+=`<g class="cnode" data-open="${T.cap}"><polygon points="${hexPts(capP.x,capP.y,15)}" fill="${cfill}" stroke="${cstroke}" stroke-width="${pr.unlocked&&!capOn?3.5:2}" ${capOn?'filter="url(#glow)"':""}/>${capOn?`<text x="${capP.x}" y="${capP.y+4.5}" text-anchor="middle" font-size="13" font-weight="800" fill="#fff">✓</text>`:""}<title>${esc(cs.name)} (${TIER_NAME[t]} capstone)${capOn?" - earned":pr.unlocked?" - ready":""}</title></g>`;
-      parents=[{...capP,on:capOn}];
+      nodes+=`<g class="cnode" data-open="${T.cap}"><polygon points="${hexPts(capP.x,capP.y,15)}" fill="${cfill}" stroke="${cstroke}" stroke-width="${pr.unlocked&&!capOn?3.5:2}" ${glow(capOn)}/>${capOn?`<text x="${capP.x}" y="${capP.y+4.5}" text-anchor="middle" font-size="13" font-weight="800" fill="#fff">✓</text>`:""}<title>${esc(cs.name)} (${a.name}, ${TIER_NAME[t]} capstone)${capOn?" - earned":pr.unlocked?" - ready":""}</title></g>`;
+      parent={...capP,on:capOn};
     });
-    const lp=polar(462,c), top=topTier(u.id,a.id);
-    labels+=`<text x="${lp.x}" y="${lp.y-2}" text-anchor="middle" font-size="14" font-weight="700" fill="var(--ink)">${esc(a.name)}</text>`;
-    labels+=`<text x="${lp.x}" y="${lp.y+14}" text-anchor="middle" font-size="11.5" font-weight="700" fill="${top?`var(--${top})`:"var(--muted)"}">${top?TIER_NAME[top]:"Not started"}</text>`;
+    edges+=`<g style="${av}">${g}</g>`;
+    const lp=polar(LBL,c), top=topTier(u.id,a.id);
+    const anc=lp.x>40?"start":lp.x<-40?"end":"middle";
+    labels+=`<text x="${lp.x}" y="${lp.y-2}" text-anchor="${anc}" font-size="15" font-weight="700" fill="var(--a-${a.id}-ink)">${esc(a.name)}</text>`;
+    labels+=`<text x="${lp.x}" y="${lp.y+15}" text-anchor="${anc}" font-size="12" font-weight="700" fill="${top?`var(--${top})`:"var(--muted)"}">${top?TIER_NAME[top]:"Not started"}</text>`;
   });
+  // tier rings in bronze / silver / gold
+  TIERS.forEach(t=>{ bg+=`<circle r="${RING[t].c}" fill="none" stroke="var(--${t})" stroke-opacity=".55" stroke-width="1.5" stroke-dasharray="3 5"/>`; });
   const held=liveSkills().filter(s=>has(u.id,s.id)).length, tot=liveSkills().length;
-  const center=`<circle r="44" fill="var(--panel)" stroke="var(--accent)" stroke-width="3"/><text y="-4" text-anchor="middle" font-size="18" font-weight="800" fill="var(--ink)">${initials(u.name)}</text><text y="16" text-anchor="middle" font-size="11" fill="var(--muted)">${held} / ${tot}</text>`;
-  return `<svg viewBox="-520 -500 1040 1000" style="width:100%;max-width:780px;display:block;margin:0 auto" role="img" aria-label="${esc(u.name)}'s skill tree">
-    <defs><filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  const center=`<circle r="46" fill="var(--panel)" stroke="var(--accent)" stroke-width="3"/><text y="-3" text-anchor="middle" font-size="19" font-weight="800" fill="var(--ink)">${initials(u.name)}</text><text y="16" text-anchor="middle" font-size="11.5" fill="var(--muted)">${held} / ${tot}</text>`;
+  return `<svg viewBox="${-VBX} ${-VB} ${2*VBX} ${2*VB}" style="width:100%;max-width:1100px;display:block;margin:0 auto;font-family:inherit" role="img" aria-label="${esc(u.name)}'s skill tree">
+    <defs><filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>${defs}</defs>
     ${bg}${edges}${nodes}${center}${labels}</svg>`;
 }
 
@@ -383,8 +529,20 @@ function radialSVG(u){
 function renderApprovals(){
   const u=me(), q=queueFor(u);
   const recent=S.requests.filter(r=>(r.status==="approved"||r.status==="returned")&&canApprove(u,r.sid)).slice(-6).reverse();
+  const acc=pendingAccounts(), homeOpts=areaList().map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join("");
   $("#main").innerHTML = `
-   <h2>Approval queue</h2><p class="muted">${u.role==="admin"?"All areas (admin).":`Requests for ${areaList().filter(a=>a.lead===u.id).map(a=>a.name).join(", ")}.`} Approve after you observe the person in person.</p>
+   <h2>New account requests${acc.length?` (${acc.length})`:""}</h2>
+   <p class="muted">People who used "Create an NIS Skill account" on the sign-in page. Check they are an NIS intern or staff member, then approve. They sign in with their NIS username and the starter password.</p>
+   <div class="grid" style="margin-bottom:22px">${acc.length?acc.map(r=>`<div class="card req-card" style="border-left:4px solid var(--accent)">
+     <span class="av" style="width:40px;height:40px">${initials(r.name)}</span>
+     <div class="grow" style="min-width:220px"><b>${esc(r.name)}</b> <span class="muted">asked for an account</span><br>
+       <span class="muted" style="font-size:13px">NIS username: <b style="color:var(--ink)">${esc(r.username)}</b> · ${fmt(r.date)}</span>
+       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:13px">
+         <label>Role <select id="arRole${r.id}"><option value="intern">Intern</option><option value="admin">Staff</option></select></label>
+         <label>Home area <select id="arHome${r.id}"><option value="">None</option>${homeOpts}</select></label></div></div>
+     <div style="display:flex;gap:6px"><button class="btn ok" data-act="acctApprove" data-id="${r.id}">Approve</button><button class="btn" data-act="acctDecline" data-id="${r.id}">Decline</button></div></div>`).join("")
+     :'<div class="card empty">No new account requests.</div>'}</div>
+   <h2>Approval queue</h2><p class="muted">All areas. Any staff member can approve; requests in your primary areas${primaryAreas(u.id).length?` (${primaryAreas(u.id).map(a=>esc(a.name)).join(", ")})`:""} are listed first. Approve after you observe the person in person.</p>
    <div class="grid">${q.length?q.map(r=>{const sk=SKILLS[r.sid],p=person(r.pid);return `<div class="card req-card">
      <span class="av" style="width:40px;height:40px">${initials(p.name)}</span>
      <div class="grow" style="min-width:220px"><b>${esc(p.name)}</b> <span class="muted">requested</span> <a href="#" data-open="${sk.id}">${esc(sk.name)}</a><br>
@@ -502,7 +660,7 @@ function growthChart(series){
 }
 function renderGrowth(){
   initG(); const ser=growthSeries(); G._ser=ser;
-  const groups=["intern","lead","admin"].map(r=>({r,ps:PEOPLE.filter(p=>p.role===r)}));
+  const groups=["intern","admin"].map(r=>({r,ps:PEOPLE.filter(p=>p.role===r)}));
   const ids=[...G.people].filter(id=>person(id));
   const rows=(G.mode==="total"&&ids.length?[{name:"Combined",id:null,sum:summaryFor(ids)}]:[]).concat(ids.map(id=>({name:person(id).name,id,sum:summaryFor([id])})));
   const [fi,ti]=rangeISO();
@@ -596,6 +754,10 @@ document.addEventListener("click",e=>{
   if(act==="csvEvents") return csvEvents();
 
   // learners
+  if(act==="acctApprove"){ const id=+b.dataset.id, r=S.accountReqs.find(x=>x.id===id); const role=$("#arRole"+id).value, home=$("#arHome"+id).value;
+    return run(()=>API.approveAccount(id,role,home), `${r?.name||"They"} can now sign in with "${r?.username||""}" and the starter password`); }
+  if(act==="acctDecline"){ const id=+b.dataset.id; if(!confirmInline(b,"Decline?")) return; return run(()=>API.declineAccount(id), "Request declined"); }
+  if(act==="selfAdd"){ const before=progress(u.id,SKILLS[sid].area,SKILLS[sid].tier); closeDrawer(); return run(()=>API.selfAdd(sid), ()=>celebrate(u.id,sid,before)||"Added to your skills"); }
   if(act==="request") return run(()=>API.requestSignoff(sid), `Request sent to ${leadName(SKILLS[sid].area)}`);
   if(act==="withdraw") return run(()=>API.withdraw(+b.dataset.id), "Request withdrawn");
 
@@ -620,6 +782,10 @@ document.addEventListener("click",e=>{
     closeDrawer(); return run(()=>API.saveSkill(sid,f), "Saved. Everyone's records now show the update."); }
   if(act==="retire"){ const n=PEOPLE.filter(p=>has(p.id,sid)).length; closeDrawer(); return run(()=>API.setRetired(sid,true), `Retired. Kept on ${n} ${n===1?"person's record":"people's records"}.`); }
   if(act==="restore") return run(()=>API.setRetired(b.dataset.sid,false), "Restored to the tree");
+  if(act==="dlCSV"){ b.closest("details")?.removeAttribute("open"); csvMine(u); return toast("Skills log downloaded (CSV)"); }
+  if(act==="dlPDF"){ b.closest("details")?.removeAttribute("open"); toast('In the print window, choose "Save as PDF"'); return setTimeout(()=>window.print(),300); }
+  if(act==="cert") return openCertificate(u,b.dataset.carea,b.dataset.ctier);
+  if(act==="areaColor") return run(()=>API.setAreaColor(S.area,b.dataset.color), "Area colour updated everywhere");
   if(act==="saveArea") return run(()=>API.saveArea(S.area, $("#areaName").value.trim(), $("#areaLead").value), "Area saved");
   if(act==="addArea"){ closeDrawer(); return run(()=>API.saveArea(null,"New area",u.id)).then(id=>{ if(id){ S.area=id; render(); toast("New area added. Rename it and add skills."); } }); }
 
@@ -632,6 +798,7 @@ function confirmInline(b,label){ if(b.dataset.armed){ return true; } b.dataset.a
 
 document.addEventListener("change",e=>{
   const t=e.target;
+  if(t.id==="userSel" && t.value==="__out"){ closeDrawer(); return renderLogin(); }
   if(t.id==="userSel"){ S.user=t.value; const u=me(); S.area=u.home||S.area; closeDrawer(); render(); toast(`Now viewing as ${u.name} (${ROLE_NAME[u.role]})`); }
   if(t.id==="covT"){ S.coverage=t.checked; renderTree(); }
   if(t.id==="gFrom"||t.id==="gTo"){ G[t.id==="gFrom"?"from":"to"]=t.value; G.preset=null; if(G.from>G.to){ const x=G.from; G.from=G.to; G.to=x; } renderGrowth(); }
@@ -639,6 +806,7 @@ document.addEventListener("change",e=>{
   if(t.id==="covArea"){ covArea=t.value; renderAdmin(); }
   if(t.id==="ovA") fillOvSkills();
   if(t.dataset.act==="interest") return run(()=>API.setInterest(S.selected,t.checked));
+  if(t.id==="areaColorPick") return run(()=>API.setAreaColor(S.area,t.value), "Area colour updated everywhere");
   if(t.dataset.rule) return run(()=>API.setRule(S.area,t.dataset.rule,Math.max(0,parseInt(t.value)||0)));
   const pid=t.dataset.pname||t.dataset.prole||t.dataset.phome||t.dataset.pactive||t.dataset.end;
   if(pid){ const p=person(pid); const f={name:p.name,role:p.role,home:p.home,end:p.end,active:p.active};

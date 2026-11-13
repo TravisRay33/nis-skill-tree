@@ -24,6 +24,20 @@ const DemoAPI = {
   async grant(pid,sid){ const u=me(); if(has(pid,sid)) return; certify(pid,sid,u.id,"override");
     const r=pendingReq(pid,sid); if(r) Object.assign(r,{status:"approved",reviewer:u.id,note:"Granted by admin"});
     addLog(`Override: ${u.name} granted ${person(pid).name} ${SKILLS[sid].name}`); },
+  async requestAccount(name,username){ name=String(name||"").trim(); username=String(username||"").trim().toLowerCase();
+    if(!name) throw new Error("Please enter your name.");
+    if(!/^[a-z0-9._-]{2,40}$/.test(username)) throw new Error("Usernames can use letters, numbers, dots, dashes and underscores (2 to 40 characters).");
+    if(PEOPLE.some(p=>(p.username||p.id)===username)) throw new Error("That username already has an account. Try signing in, or ask staff to reset your password.");
+    if(!S.accountReqs.some(r=>r.username===username&&r.status==="pending")) S.accountReqs.push({id:Math.max(0,...S.accountReqs.map(r=>r.id))+1,name,username,date:ymd(today),status:"pending"});
+    addLog(`${name} (${username}) asked for an account`); return {ok:true,emailed:false}; },
+  async approveAccount(id,role,home){ const r=S.accountReqs.find(x=>x.id===id); if(!r||r.status!=="pending") throw new Error("That request was already handled.");
+    const pid=newId("p"); PEOPLE.push({id:pid,name:r.name,username:r.username,role:role==="admin"?"admin":"intern",home:home||null,end:null,active:true});
+    Object.assign(r,{status:"approved",person:pid}); addLog(`${me().name} approved the account request from ${r.name} (${r.username})`); },
+  async declineAccount(id){ const r=S.accountReqs.find(x=>x.id===id); if(!r||r.status!=="pending") throw new Error("That request was already handled.");
+    r.status="declined"; addLog(`${me().name} declined the account request from ${r.name} (${r.username})`); },
+  async selfAdd(sid){ const u=me(); if(has(u.id,sid)) return; certify(u.id,sid,u.id,"self");
+    const r=pendingReq(u.id,sid); if(r) Object.assign(r,{status:"approved",reviewer:u.id,note:"Added by staff"});
+    addLog(`${u.name} added ${SKILLS[sid].name} to their own skills`); },
   async revoke(pid,sid){ const u=me(); revoke(pid,sid,u.id); addLog(`Override: ${u.name} removed ${SKILLS[sid].name} from ${person(pid).name}`); },
   async grantTier(pid,area,tier){ const u=me(), T=AREAS[area].tiers[tier];
     [...live(T.req),...live(T.el),T.cap].forEach(s=>{ if(!has(pid,s)) grant(pid,s,u.id,"override",nowISO()); });
@@ -42,11 +56,12 @@ const DemoAPI = {
     if(!id){ id=newId("area"); AREAS[id]={id,name:name||"New area",lead,tiers:{},rules:{bronze:{el:2},silver:{el:2},gold:{el:2}}};
       TIERS.forEach(t=>{ const cid=id+"-"+t+"-cap"; SKILLS[cid]={id:cid,area:id,tier:t,kind:"cap",name:{bronze:"Teach the new area SOP",silver:"Lead an advanced workshop",gold:"Develop a new workshop"}[t],desc:"Describe the capstone.",steps:["Plan","Deliver with the area lead present","Request sign-off"],time:"TBD"}; AREAS[id].tiers[t]={req:[],el:[],cap:cid}; });
       addLog(`${me().name} added a new area`); }
-    else { const a=AREAS[id]; a.name=name||a.name; a.lead=lead; addLog(`${me().name} updated area ${a.name}`); }
-    const ld=person(lead); if(ld&&ld.role==="intern") ld.role="lead"; return id; },
+    else { const a=AREAS[id]; a.name=name||a.name; a.lead=lead||null; addLog(`${me().name} updated area ${a.name}`); }
+    return id; },
+  async setAreaColor(area,hex){ AREAS[area].color=hex; addLog(`${me().name} set the ${AREAS[area].name} colour to ${hex}`); },
   async setRule(area,tier,n){ AREAS[area].rules[tier].el=n; addLog(`${me().name} set ${AREAS[area].name} ${TIER_NAME[tier]} to need ${n} electives`); },
   async addPerson(f){ PEOPLE.push({id:newId("p"),name:f.name,role:f.role,home:f.home,end:null,active:true}); addLog(`${me().name} added ${f.name}`); },
-  async updatePerson(pid,f){ if(pid===S.user && (f.role!=="admin"||!f.active)) throw new Error("You cannot remove your own admin access.");
+  async updatePerson(pid,f){ if(pid===S.user && (f.role!=="admin"||!f.active)) throw new Error("You cannot remove your own staff access.");
     Object.assign(person(pid),{name:f.name,role:f.role,home:f.home,end:f.end,active:f.active}); },
   async resetPassword(){ throw new Error("Passwords only exist on the live site."); }
 };
@@ -72,7 +87,7 @@ const LiveAPI = {
       fetchAll("certifications","at"),fetchAll("events","id"),fetchAll("requests","id"),fetchAll("interests","person"),
       sb.from("activity_log").select("*").order("id",{ascending:false}).limit(50)]);
     Object.keys(AREAS).forEach(k=>delete AREAS[k]); Object.keys(SKILLS).forEach(k=>delete SKILLS[k]); PEOPLE.length=0;
-    areas.forEach(a=>{ AREAS[a.id]={id:a.id,name:a.name,lead:a.lead,tiers:{},rules:{}}; TIERS.forEach(t=>{ AREAS[a.id].tiers[t]={req:[],el:[],cap:null}; AREAS[a.id].rules[t]={el:2}; }); });
+    areas.forEach(a=>{ AREAS[a.id]={id:a.id,name:a.name,lead:a.lead,color:a.color||null,tiers:{},rules:{}}; TIERS.forEach(t=>{ AREAS[a.id].tiers[t]={req:[],el:[],cap:null}; AREAS[a.id].rules[t]={el:2}; }); });
     rules.forEach(r=>{ if(AREAS[r.area]) AREAS[r.area].rules[r.tier]={el:r.electives_needed}; });
     skills.forEach(s=>{ const T=AREAS[s.area]?.tiers[s.tier]; if(!T) return;
       SKILLS[s.id]={id:s.id,area:s.area,tier:s.tier,kind:s.kind,name:s.name,desc:s.description,steps:Array.isArray(s.steps)?s.steps:[],time:s.est_time,retired:s.retired};
@@ -84,6 +99,8 @@ const LiveAPI = {
     S.requests=requests.map(r=>({id:r.id,pid:r.person,sid:r.skill,status:r.status,date:toLocal(r.created_at),reviewer:r.reviewer,note:r.note}));
     S.interests=new Set(interests.map(i=>key(i.person,i.skill)));
     S.log=(log.data||[]).map(l=>({date:toLocal(l.at),text:l.text}));
+    try{ const {data,error}=await sb.from("account_requests").select("*").eq("status","pending").order("id"); if(error) throw error;
+      S.accountReqs=(data||[]).map(r=>({id:r.id,name:r.name,username:r.username,date:toLocal(r.created_at),status:r.status})); }catch(_){ S.accountReqs=[]; }
     lastLoad=Date.now();
   },
   async signIn(username,password){ const email=`${username.trim().toLowerCase()}@${CFG.usernameDomain}`;
@@ -95,6 +112,7 @@ const LiveAPI = {
   withdraw: id=>rpc("withdraw_request",{p_id:id}),
   review: (id,approve,note)=>rpc("review_request",{p_id:id,p_approve:approve,p_note:note||""}),
   grant: (pid,sid)=>rpc("grant_skill",{p_person:pid,p_skill:sid}),
+  selfAdd: (sid)=>rpc("add_own_skill",{p_skill:sid}),
   revoke: (pid,sid)=>rpc("revoke_skill",{p_person:pid,p_skill:sid}),
   grantTier: (pid,area,tier)=>rpc("grant_tier",{p_person:pid,p_area:area,p_tier:tier}),
   setInterest: (sid,on)=>rpc("set_interest",{p_skill:sid,p_on:on}),
@@ -102,15 +120,24 @@ const LiveAPI = {
   saveSkill: (sid,f)=>rpc("save_skill",{p_id:sid,p_name:f.name,p_desc:f.desc,p_steps:f.steps,p_time:f.time,p_kind:f.kind,p_tier:f.tier}),
   setRetired: (sid,on)=>rpc("set_retired",{p_id:sid,p_retired:on}),
   saveArea: (id,name,lead)=>rpc("save_area",{p_id:id,p_name:name,p_lead:lead||null}),
+  // needs supabase/5_area_colors.sql (adds areas.color and set_area_color); until then the default colours are used
+  setAreaColor: (area,hex)=>rpc("set_area_color",{p_area:area,p_color:hex}),
   setRule: (area,tier,n)=>rpc("set_rule",{p_area:area,p_tier:tier,p_n:n}),
   addPerson: f=>manageUsers({action:"create",username:f.username,name:f.name,role:f.role,home_area:f.home||null}),
   updatePerson: (pid,f)=>rpc("update_person",{p_id:pid,p_name:f.name,p_role:f.role,p_home:f.home||null,p_end:f.end||null,p_active:f.active}),
-  resetPassword: pid=>manageUsers({action:"reset",person_id:pid})
+  resetPassword: pid=>manageUsers({action:"reset",person_id:pid}),
+  // "Create an NIS Skill account": saved and emailed to staff by the request-account Edge Function (see supabase/9_...)
+  async requestAccount(name,username){ const {data,error}=await sb.functions.invoke("request-account",{body:{name,username}});
+    if(error){ if(error.name==="FunctionsFetchError"||/failed to send/i.test(error.message)) throw new Error("Couldn't send your request right now. Please ask NIS staff in person.");
+      let msg=error.message; try{ const j=await error.context.json(); msg=j.error||msg; }catch(_){} throw new Error(msg); }
+    if(data&&data.error) throw new Error(data.error); return data; },
+  approveAccount: (id,role,home)=>manageUsers({action:"approveRequest",request_id:id,role,home_area:home||null}),
+  declineAccount: id=>rpc("decline_account_request",{p_id:id})
 };
 const API = LIVE ? LiveAPI : DemoAPI;
 
 /* ============ SIGN-IN SCREENS (live only) ============ */
-function bare(html){ $("#nav").innerHTML=""; $("#who").innerHTML=""; S.selected=null; $("#drawer").classList.remove("open"); $("#main").innerHTML=`<div style="max-width:420px;margin:40px auto">${html}</div>`; }
+function bare(html){ $("#nav").innerHTML=""; if(LIVE) $("#who").innerHTML=""; S.selected=null; $("#drawer").classList.remove("open"); $("#main").innerHTML=`<div style="max-width:420px;margin:40px auto">${html}</div>`; }
 function renderLogin(msg){
   bare(`<form class="card" id="loginForm" style="display:grid;gap:12px">
     <h2>Sign in</h2>
@@ -119,11 +146,36 @@ function renderLogin(msg){
     <label>Username<br><input id="lgUser" autocomplete="username" style="width:100%" required></label>
     <label>Password<br><input id="lgPw" type="password" autocomplete="current-password" style="width:100%" required></label>
     <button class="btn primary" type="submit">Sign in</button>
+    <div style="text-align:center;border-top:1px solid var(--line);padding-top:12px;font-size:13px">
+      <span class="muted">New to the skill tree?</span> <button class="btn small" type="button" id="toRequest">Create an NIS Skill account</button></div>
   </form>`);
   $("#lgUser").focus();
+  $("#toRequest").addEventListener("click",()=>renderRequestAccount());
   $("#loginForm").addEventListener("submit",async e=>{ e.preventDefault(); const btn=e.target.querySelector("button"); btn.disabled=true; btn.textContent="Signing in…";
+    if(!LIVE) return renderLogin("This is the demo: signing in only works on the live site. Pick a person under \"Viewing as\" to continue.");
     try{ const uid=await API.signIn($("#lgUser").value,$("#lgPw").value); await startSession(uid); }
     catch(err){ renderLogin(err.message); } });
+}
+function renderRequestAccount(msg){
+  bare(`<form class="card" id="reqForm" style="display:grid;gap:12px">
+    <h2>Create an NIS Skill account</h2>
+    <div class="muted" style="font-size:13px">Tell us who you are. A staff member will check and approve your account, then you can sign in with your NIS username and the starter password from staff.</div>
+    ${msg?`<div class="card" style="padding:10px;font-size:13px;border-color:var(--bad)">${esc(msg)}</div>`:""}
+    <label>Your name<br><input id="rqName" autocomplete="name" style="width:100%" required maxlength="80"></label>
+    <label>NIS username<br><input id="rqUser" autocomplete="username" style="width:100%" required maxlength="40" pattern="[A-Za-z0-9._\\-]{2,40}" title="Letters, numbers, dots, dashes and underscores"></label>
+    <div style="display:flex;gap:8px"><button class="btn primary" type="submit">Send request</button><button class="btn" type="button" id="rqBack">Back to sign in</button></div>
+  </form>`);
+  $("#rqName").focus();
+  $("#rqBack").addEventListener("click",()=>renderLogin());
+  $("#reqForm").addEventListener("submit",async e=>{ e.preventDefault(); const btn=e.target.querySelector("button[type=submit]"); btn.disabled=true; btn.textContent="Sending…";
+    const name=$("#rqName").value, user=$("#rqUser").value;
+    try{ await API.requestAccount(name,user);
+      bare(`<div class="card" style="display:grid;gap:12px"><h2>Request sent</h2>
+        <p style="margin:0">Thanks, ${esc(name.trim())}. NIS staff have been told about your request for <b>${esc(user.trim().toLowerCase())}</b>.</p>
+        <p class="muted" style="margin:0;font-size:13px">Once a staff member approves it, sign in with your NIS username and the starter password they give you.${LIVE?"":" (Demo: this test copy never sends email; on the live site staff get one. Switch \"Viewing as\" to a staff member and open Approvals to see the request.)"}</p>
+        <div><button class="btn" type="button" id="rqDone">Back to sign in</button></div></div>`);
+      $("#rqDone").addEventListener("click",()=>renderLogin());
+    }catch(err){ renderRequestAccount(err.message); } });
 }
 function renderChangePassword(forced){
   bare(`<form class="card" id="pwForm" style="display:grid;gap:12px">

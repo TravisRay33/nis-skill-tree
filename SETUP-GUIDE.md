@@ -13,6 +13,9 @@ Files you will use (all in this folder):
 | --- | --- |
 | `supabase/1_schema.sql` | Step 2 |
 | `supabase/2_starter_content.sql` | Step 2 |
+| `supabase/5_area_colors.sql` | Step 2 |
+| `supabase/8_account_requests.sql` | Step 2 (existing sites only; new sites get it from 1_schema.sql) |
+| `supabase/9_request-account_edge_function.ts` | Step 5b |
 | `supabase/3_make_me_admin.sql` | Step 4 |
 | `supabase/4_manage-users_edge_function.ts` | Step 5 |
 | `docs/js/config.js` | Step 6 |
@@ -43,7 +46,10 @@ The website itself lives in the `docs` folder. (GitHub requires that name to sho
 
 1. In the left sidebar, open **SQL Editor**, then **New query**.
 2. Open `supabase/1_schema.sql` in Notepad, copy everything, paste it into the editor, and click **Run**. You should see "Success".
-3. Start another **New query**. Paste all of `supabase/2_starter_content.sql` and click **Run**. This adds the six areas and the sample skills. You can rename or replace them later from the site.
+3. Start another **New query**. Paste all of `supabase/2_starter_content.sql` and click **Run**. This adds the eight areas and the sample skills. You can rename or replace them later from the site.
+4. Start one more **New query**. Paste all of `supabase/5_area_colors.sql` and click **Run**. This gives each area its colour. 
+
+> **Already set up before November 2026?** Don't rerun steps 1 to 3. Instead run these files once each, in order: `5_area_colors.sql`, `6_split_rapid_prototyping.sql`, `7_staff_roles.sql`, `8_account_requests.sql`. Your people, sign-offs and edits (for example to Woodshop) are kept. Then redeploy `manage-users` (step 5, paste the new file) and do step 5b.
 
 ## 3. Turn off public sign-ups
 
@@ -79,6 +85,24 @@ This lets you add people and reset passwords from inside the site.
 
 6. Click **Save**.
 
+## 5b. Let people ask for an account ("Create an NIS Skill account")
+
+The sign-in page has a **Create an NIS Skill account** button. People enter their name and NIS username; the request shows up at the top of **Approvals** for staff, and staff get an email.
+
+1. **Edge Functions > Deploy a new function > Via Editor.** Name it exactly `request-account`, paste everything from `supabase/9_request-account_edge_function.ts`, and click **Deploy function**.
+2. Turn **off** **Verify JWT** for this function too (people asking for an account aren't signed in yet).
+3. For the email, make a free account at [resend.com](https://resend.com) with the email address that should get the notices. Go to **API Keys > Create API key** and copy it.
+4. In Supabase **Edge Functions > Secrets**, add:
+
+   | Key | Value |
+   | --- | --- |
+   | `STAFF_EMAIL` | where notices go (the same address you used for Resend) |
+   | `RESEND_API_KEY` | the key from Resend |
+   | `SITE_URL` | your Netlify address (optional, put as a link in the email) |
+
+   Without these the button still works; requests just wait in Approvals with no email. Resend's free test sender can only email the address you signed up with. To email several staff, add and verify a domain in Resend, then add an `EMAIL_FROM` secret such as `NIS Skill Tree <skills@your-domain>` and list the addresses in `STAFF_EMAIL`, separated by commas.
+5. Test it: sign out, click **Create an NIS Skill account**, send a request, then sign in as staff and open **Approvals**. Approving creates the person with the starter password; tell them to sign in.
+
 ## 6. Connect the site to your project
 
 1. In Supabase, open **Project Settings > API Keys** (or click **Connect** at the top). Copy:
@@ -106,7 +130,7 @@ This lets you add people and reset passwords from inside the site.
 ## 8. First sign-in and setup
 
 1. Open your Netlify link and sign in with your username and password from step 4.
-2. **Set area leads:** Skill tree > pick an area > **Edit tree** > choose the **Area lead** > **Save area**. (Leads need to be added as people first, see the next step.)
+2. **Set primary staff:** Skills > pick an area > **Edit tree** > choose the **Primary staff** > **Save area**. A staff member can be primary on more than one area. (Add them as people with the Staff role first, see the next step.)
 3. **Add people:** **Coverage & admin > People**. Enter each person's name, NIS username, role, and home area, then click **Add person**. They get the starter password from step 5.
 4. Send each tester: the link, their username, and the starter password. They can change it any time with **Change password**. (To require a new password at first sign-in instead, set `forcePasswordChange: true` in `docs/js/config.js`.)
 
@@ -118,7 +142,7 @@ This lets you add people and reset passwords from inside the site.
 
 - **Free-plan pause:** Supabase pauses a free project after 7 days with no activity (for example over a break). If the site says it can't load, open Supabase and click **Restore project**; it takes about a minute.
 - **Backups:** the free plan has no automatic backups. Once in a while, download **Growth > Download all sign-off events CSV**, which holds the full history.
-- **Who can do what** is enforced by the database itself, not just the page: interns can only request and mark interest; area leads can approve and edit their own area; admins can do everything.
+- **Who can do what** is enforced by the database itself, not just the page: interns can only request sign-offs and mark interest; staff can do everything, including adding skills to their own record without a request.
 - **Practice copy:** double-click `docs/index.html` to use the sample-data version on your own computer.
 
 ## How updates flow

@@ -21,9 +21,14 @@ Set in `docs/js/config.js`. The default `mode: "auto"` runs live on Netlify (`*.
 | `docs/js/app.js` | Screens and logic: skill tree, edit mode, profile with radial tree, approvals, admin, growth over time. |
 | `docs/js/api.js` | Data layer. `DemoAPI` (in-browser) and `LiveAPI` (Supabase) expose the same actions. Also the sign-in and change-password screens and startup. |
 | `supabase/1_schema.sql` | Tables, security rules, and the functions every change goes through. |
-| `supabase/2_starter_content.sql` | The six areas and sample skills. |
+| `supabase/2_starter_content.sql` | The eight areas and sample skills. |
 | `supabase/3_make_me_admin.sql` | Makes the first admin. |
-| `supabase/4_manage-users_edge_function.ts` | Admin-only function to add people and reset passwords. |
+| `supabase/4_manage-users_edge_function.ts` | Staff-only function to add people, approve account requests, and reset passwords. |
+| `supabase/5_area_colors.sql` | Adds a colour to each area (set in Edit tree). Run once after `1_schema.sql`. |
+| `supabase/6_split_rapid_prototyping.sql` | One-time update for sites set up before Nov 2026: splits Rapid Prototyping into 3D Printing & Scanning, Laser Engraving, and Electronics & Robotics, keeping all sign-offs. |
+| `supabase/7_staff_roles.sql` | One-time update for sites set up before Nov 2026: two roles (Staff, Intern), primary staff per area, staff can add skills to their own record. |
+| `supabase/8_account_requests.sql` | One-time update for sites set up before Nov 2026: account requests from the sign-in page (already in `1_schema.sql` for new sites). |
+| `supabase/9_request-account_edge_function.ts` | Public function behind "Create an NIS Skill account": saves the request and emails staff. |
 
 Script load order matters: config, supabase, data, app, api.
 
@@ -31,8 +36,7 @@ Script load order matters: config, supabase, data, app, api.
 - Everyone signed in can read the trees, people, and records (transparency is the point).
 - Nobody writes to tables directly. Every change calls a database function that checks permissions first:
   - interns: request sign-offs, withdraw requests, mark "want to learn", change own password
-  - area leads: approve or return requests and edit the tree for their own area
-  - admins: everything, including overrides, areas, people, and password resets
+  - staff: everything, including approving requests, adding skills to their own record, editing any area, overrides, people, and password resets
 - Public sign-up is turned off, so only people an admin adds can sign in.
 
 ## Data for research
