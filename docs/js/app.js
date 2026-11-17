@@ -20,7 +20,7 @@ function daysAgo(n){const d=new Date(today);d.setDate(d.getDate()-n);return d.to
 function isoLocal(d){const z=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}:00`;}
 const nowISO=()=>isoLocal(new Date());
 function grant(p,s,by,src,at){ const rec={by,at:at||null,source:src||"seed"}; S.certs.set(key(p,s),rec); if(at) S.events.push({pid:p,sid:s,type:"earned",at,by,source:rec.source}); }
-function revoke(p,s,by){ if(!S.certs.has(key(p,s))) return; revoke(p,s,u.id); S.events.push({pid:p,sid:s,type:"removed",at:nowISO(),by,source:"override"}); }
+function revoke(p,s,by){ if(!S.certs.has(key(p,s))) return; S.certs.delete(key(p,s)); S.events.push({pid:p,sid:s,type:"removed",at:nowISO(),by,source:"override"}); }
 /* Sample timestamps: spread each person's skills between their start date and today; capstones land after their tier's skills. */
 function seedDates(){
   const START={}; PEOPLE.forEach(p=>START[p.id]= p.role==="intern"? 120+Math.floor(R()*330) : 540); START.jordan=START.ben=700;
@@ -37,7 +37,7 @@ function seed(){
     AREA_DEFS.forEach(a=>{
       const home = p.home===a.id;
       const T = AREAS[a.id].tiers;
-      if(p.role==="admin" && a.lead===p.id){
+      if(p.role==="admin" && a.staff.includes(p.id)){
         ["bronze","silver"].forEach(t=>{[...T[t].req,...T[t].el,T[t].cap].forEach(s=>grant(p.id,s,"travis"));});
         grant(p.id,T.gold.req[0],"travis");
         if(R()<.5) grant(p.id,T.gold.req[1],"travis");
@@ -45,17 +45,17 @@ function seed(){
       } else if(p.role==="admin" && home){
         ["bronze","silver"].forEach(t=>{[...T[t].req,...T[t].el,T[t].cap].forEach(s=>grant(p.id,s,"priya"));});
       } else if(p.role==="intern" && home){
-        T.bronze.req.forEach(s=>grant(p.id,s,a.lead));
-        T.bronze.el.forEach(s=>{if(R()<.7)grant(p.id,s,a.lead);});
-        if(capUnlocked(p.id,a.id,"bronze") && R()<.85) grant(p.id,T.bronze.cap,a.lead);
-        T.silver.req.forEach(s=>{if(R()<.5)grant(p.id,s,a.lead);});
-        T.silver.el.forEach(s=>{if(R()<.35)grant(p.id,s,a.lead);});
-        if(capUnlocked(p.id,a.id,"silver") && R()<.6) grant(p.id,T.silver.cap,a.lead);
-        T.gold.el.forEach(s=>{if(R()<.06)grant(p.id,s,a.lead);});
+        T.bronze.req.forEach(s=>grant(p.id,s,a.staff[0]));
+        T.bronze.el.forEach(s=>{if(R()<.7)grant(p.id,s,a.staff[0]);});
+        if(capUnlocked(p.id,a.id,"bronze") && R()<.85) grant(p.id,T.bronze.cap,a.staff[0]);
+        T.silver.req.forEach(s=>{if(R()<.5)grant(p.id,s,a.staff[0]);});
+        T.silver.el.forEach(s=>{if(R()<.35)grant(p.id,s,a.staff[0]);});
+        if(capUnlocked(p.id,a.id,"silver") && R()<.6) grant(p.id,T.silver.cap,a.staff[0]);
+        T.gold.el.forEach(s=>{if(R()<.06)grant(p.id,s,a.staff[0]);});
       } else {
         const pr = p.role==="admin"?.25:.12;
-        [...T.bronze.req,...T.bronze.el].forEach(s=>{if(R()<pr)grant(p.id,s,a.lead);});
-        if(p.role==="admin" && capUnlocked(p.id,a.id,"bronze")) grant(p.id,T.bronze.cap,a.lead);
+        [...T.bronze.req,...T.bronze.el].forEach(s=>{if(R()<pr)grant(p.id,s,a.staff[0]);});
+        if(p.role==="admin" && capUnlocked(p.id,a.id,"bronze")) grant(p.id,T.bronze.cap,a.staff[0]);
       }
     });
   });
@@ -93,8 +93,11 @@ let idSeq=1; const newId = p=>`${p}-new${idSeq++}`;
 const capUnlocked=(p,a,t)=>progress(p,a,t).unlocked;
 function topTier(pid,area){ let top=null; TIERS.forEach(t=>{ if(has(pid,AREAS[area].tiers[t].cap)) top=t; }); return top; }
 const me = ()=>person(S.user);
-const leadName = areaId=>{ const n=person(AREAS[areaId]?.lead)?.name; return n?`NIS staff (primary: ${n})`:"NIS staff"; };
-const primaryAreas = pid=>areaList().filter(a=>a.lead===pid);
+/* area staff: the people checked for an area in Coverage & admin > Area staff */
+const areaStaff = areaId=>(AREAS[areaId]?.staff||[]).map(person).filter(p=>p&&p.active&&isStaff(p));
+const staffNames = areaId=>areaStaff(areaId).map(p=>p.name).join(", ");
+const leadName = areaId=>{ const n=staffNames(areaId); return n?`NIS staff (${n})`:"NIS staff"; };
+const primaryAreas = pid=>areaList().filter(a=>(a.staff||[]).includes(pid));
 const canApprove = (u,sid)=> isStaff(u);
 const initials = n=>n.split(" ").map(x=>x[0]).join("").slice(0,2);
 const toDate = d=>new Date(String(d).length>10?d:d+"T00:00");
@@ -115,7 +118,7 @@ function renderUserSel(){
     + `<optgroup label="Not signed in"><option value="__out">Sign-in page (preview)</option></optgroup>`;
 }
 const pendingAccounts = ()=>S.accountReqs.filter(r=>r.status==="pending");
-function queueFor(u){ const mine=r=>AREAS[SKILLS[r.sid]?.area]?.lead===u.id?0:1; return S.requests.filter(r=>r.status==="requested" && canApprove(u,r.sid)).sort((a,b)=>mine(a)-mine(b)); }
+function queueFor(u){ const mine=r=>(AREAS[SKILLS[r.sid]?.area]?.staff||[]).includes(u.id)?0:1; return S.requests.filter(r=>r.status==="requested" && canApprove(u,r.sid)).sort((a,b)=>mine(a)-mine(b)); }
 function renderNav(){
   const u=me(); const items=[["tree","Skills"],["profile","My profile"]];
   if(isStaff(u)) items.push(["approvals","Approvals"]);
@@ -167,7 +170,7 @@ function renderTree(){
   const retired = Object.values(SKILLS).filter(s=>s.area===a.id && s.retired);
   $("#main").innerHTML = `
    <div class="toolrow">
-     <div><h2>${esc(a.name)}</h2><div class="muted">Primary staff: <b>${esc(person(a.lead)?.name||"none yet")}</b> · Each tier: all required skills + the set number of electives unlock the capstone. Tiers can be earned in any order.</div></div>
+     <div><h2>${esc(a.name)}</h2><div class="muted">Area staff: <b>${esc(staffNames(a.id)||"none yet")}</b> · Each tier: all required skills + the set number of electives unlock the capstone. Tiers can be earned in any order.</div></div>
      <div style="display:flex;gap:12px;align-items:center">
        ${S.edit?"":`<label class="switch"><input type="checkbox" id="covT" ${S.coverage?"checked":""}> Show team coverage</label>`}
        ${editable?`<button class="btn ${S.edit?"primary":""}" data-act="toggleEdit">${S.edit?"Done editing":"Edit tree"}</button>`:""}
@@ -184,13 +187,12 @@ function renderTree(){
    </div>`;
 }
 function editPanel(a,u,retired){
-  const staff=PEOPLE.filter(p=>p.active&&p.role!=="intern");
   return `<div class="card" style="margin-bottom:12px;border-color:var(--accent)">
     <div class="toolrow"><h3 style="margin:0">Editing ${esc(a.name)}</h3><span class="muted" style="font-size:12px">Changes go live immediately for everyone.</span></div>
     ${isStaff(u)?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
        <label>Area name <input id="areaName" value="${esc(a.name)}"></label>
-       <label>Primary staff <select id="areaLead"><option value="">None</option>${staff.map(p=>`<option value="${p.id}" ${p.id===a.lead?"selected":""}>${esc(p.name)}</option>`).join("")}</select></label>
-       <button class="btn small" data-act="saveArea">Save area</button></div>`:""}
+       <button class="btn small" data-act="saveArea">Save area</button>
+       <span class="muted" style="font-size:13px">Area staff: <b>${esc(staffNames(a.id)||"none yet")}</b>. Change them in the Area staff table under Coverage &amp; admin.</span></div>`:""}
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
        <b style="font-size:13px">Area colour</b>
        <div class="swatches">${AREA_PALETTE.map(p=>`<button type="button" title="${p.name} ${p.hex}" aria-label="${p.name}" data-act="areaColor" data-color="${p.hex}" class="${areaColor(a.id).toLowerCase()===p.hex?"on":""}" style="background:${p.hex}"></button>`).join("")}</div>
@@ -311,7 +313,7 @@ function renderDrawer(){
    <div class="sect"><h3>Steps</h3><ol class="steps">${sk.steps.map(x=>`<li>${esc(x)}</li>`).join("")}</ol></div>
    <div class="sect">${action}${ret&&!mine&&!pend?`<div class="muted" style="margin-top:8px;font-size:12px">Last request returned by ${esc(person(ret.reviewer).name)}: "${esc(ret.note||"No note")}"</div>`:""}
      ${!mine?`<div style="margin-top:10px"><label class="switch"><input type="checkbox" data-act="interest" ${iWant?"checked":""}> I want to learn this</label></div>`:""}</div>
-   <div class="sect"><h3>Who can teach this (${hs.length}) ${hs.length<=1?'<span class="pill flag">Needs coverage</span>':after<=1?'<span class="pill risk">At risk: holders leaving</span>':""}</h3>
+   <div class="sect"><h3>Who has completed this (${hs.length}) ${hs.length<=1?'<span class="pill flag">Needs coverage</span>':after<=1?'<span class="pill risk">At risk: holders leaving</span>':""}</h3>
      ${hs.length?`<ul class="plist">${hs.map(p=>`<li><span class="av">${initials(p.name)}</span><span class="grow">${esc(p.name)}<br><span class="muted" style="font-size:12px">${ROLE_NAME[p.role]}${leaving(p)?` · leaving ${fmt(p.end)}`:""}</span></span>${admin?`<button class="btn small" data-act="remove" data-p="${p.id}">Remove</button>`:""}</li>`).join("")}</ul>`:`<div class="muted">No one holds this yet.</div>`}
    </div>
    <div class="sect"><h3>Want to learn (${interested.length})</h3>${interested.length?`<ul class="plist">${interested.map(p=>`<li><span class="av">${initials(p.name)}</span><span class="grow">${esc(p.name)}</span></li>`).join("")}</ul>`:'<div class="muted">No one yet.</div>'}</div>
@@ -331,7 +333,7 @@ function renderProfile(){
   $("#main").innerHTML = `
    <div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
      <span class="av" style="width:56px;height:56px;font-size:18px">${initials(u.name)}</span>
-     <div class="grow"><h2>${esc(u.name)}</h2><div class="muted">${ROLE_NAME[u.role]} · ${isStaff(u)?`Primary on: ${esc(primaryAreas(u.id).map(a=>a.name).join(", ")||"no area yet")}`:`Home area: ${esc(AREAS[u.home]?.name||"none")}`}${u.end?` · Expected end: ${fmt(u.end)}`:""}</div></div>
+     <div class="grow"><h2>${esc(u.name)}</h2><div class="muted">${ROLE_NAME[u.role]} · ${isStaff(u)?`Area staff for: ${esc(primaryAreas(u.id).map(a=>a.name).join(", ")||"no area yet")}`:`Home area: ${esc(AREAS[u.home]?.name||"none")}`}${u.end?` · Expected end: ${fmt(u.end)}`:""}</div></div>
      <div class="stat"><div class="n">${total}</div><div class="t">skills held</div></div>
      <div class="printonly" style="width:100%">Nebraska Innovation Studio · Skill Tree profile · exported ${fmt(today)}</div>
      <details class="dl noprint"><summary class="btn">Download ▾</summary><div class="dlmenu">
@@ -339,6 +341,7 @@ function renderProfile(){
        <button data-act="dlPDF"><b>Whole profile (PDF)</b><small>This page as a PDF. In the print window, choose "Save as PDF".</small></button>
      </div></details>
    </div>
+   ${recCardHTML(u.id)}
    <div class="card" style="margin-bottom:18px">
      <div class="toolrow"><h3 style="margin:0">My skill tree</h3><span class="muted" style="font-size:12px">Bronze sits closest to the center, then Silver, then Gold. Each area keeps its colour from the Skills tab. Click any node for details.</span></div>
      ${radialSVG(u)}
@@ -389,7 +392,7 @@ function certificateHTML(u,areaId,tier){
   const date=cap?.at?toDate(cap.at).toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"}):"";
   const metal={bronze:["#b5793f","#8a5a2b","#f5e9dc"],silver:["#8d98a4","#5f6b77","#eceff2"],gold:["#d2a21c","#9c7710","#fbf2d6"]}[tier];
   const ac=areaColor(areaId), acInk=inkOn(ac,"#fefdfa");
-  const lead=person(a.lead)?.name||"";
+  const signer=person(cap?.by); const lead=(signer&&isStaff(signer)?signer:areaStaff(areaId)[0])?.name||"";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${esc(u.name)} - ${esc(a.name)} ${TIER_NAME[tier]} certificate</title>
 <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
 <style>
@@ -554,6 +557,13 @@ function renderApprovals(){
 
 /* ============ ADMIN ============ */
 let covArea="all";
+function areaStaffCard(){
+  const staff=PEOPLE.filter(p=>p.active&&isStaff(p)), areas=areaList();
+  return `<div class="card" style="margin-bottom:14px;overflow-x:auto"><div class="toolrow"><h3 style="margin:0">Area staff</h3><span class="muted" style="font-size:12px">Check who looks after each area. They are listed on the Skills tab, named on sign-off requests and suggested as "Ask" on profiles. Any staff member can still approve anything.</span></div>
+    <table class="heat"><tr><th>Staff</th>${areas.map(a=>`<th style="text-align:center">${esc(a.name)}</th>`).join("")}</tr>
+    ${staff.map(p=>`<tr><td><b>${esc(p.name)}</b></td>${areas.map(a=>`<td class="c"><input type="checkbox" data-astaff="${a.id}" data-sp="${p.id}" ${(a.staff||[]).includes(p.id)?"checked":""} aria-label="${esc(p.name)} for ${esc(a.name)}"></td>`).join("")}</tr>`).join("")}
+    <tr><td class="muted">Staff per area</td>${areas.map(a=>{const n=areaStaff(a.id).length;return `<td class="c" style="${n?"":"color:var(--bad);font-weight:700"}">${n}</td>`}).join("")}</tr></table></div>`;
+}
 function renderAdmin(){
   const all=liveSkills();
   const flagged=all.filter(s=>holders(s.id).length<=1);
@@ -571,6 +581,7 @@ function renderAdmin(){
    <div class="card" style="margin-bottom:14px;overflow-x:auto"><h3>Team capability snapshot</h3>
      <table class="heat"><tr><th>Person</th>${areaList().map(a=>`<th style="text-align:center">${esc(a.name)}</th>`).join("")}</tr>
      ${PEOPLE.filter(p=>p.active).map(p=>`<tr><td><b>${esc(p.name)}</b><br><span class="muted" style="font-size:11px">${ROLE_NAME[p.role]}${leaving(p)?' · <span style="color:var(--bad)">leaving '+fmt(p.end)+"</span>":""}</span></td>${areaList().map(a=>{const t=topTier(p.id,a.id);const n=liveSkills().filter(s=>s.area===a.id&&has(p.id,s.id)).length;return `<td class="c"><span class="chip ${t||"none"}">${t?TIER_NAME[t]:"-"}</span><div class="muted" style="font-size:11px">${n} skill${n===1?"":"s"}</div></td>`}).join("")}</tr>`).join("")}</table></div>
+   ${areaStaffCard()}
    <div class="card" style="margin-bottom:14px;overflow-x:auto"><div class="toolrow"><h3 style="margin:0">Machine skill coverage</h3>
      <select id="covArea"><option value="all">All areas</option>${areaList().map(a=>`<option value="${a.id}" ${covArea===a.id?"selected":""}>${esc(a.name)}</option>`).join("")}</select></div>
      <table><tr><th>Skill</th><th>Area</th><th>Tier</th><th>Type</th><th>Holders now</th><th>After departures</th><th>Status</th></tr>
@@ -786,7 +797,7 @@ document.addEventListener("click",e=>{
   if(act==="dlPDF"){ b.closest("details")?.removeAttribute("open"); toast('In the print window, choose "Save as PDF"'); return setTimeout(()=>window.print(),300); }
   if(act==="cert") return openCertificate(u,b.dataset.carea,b.dataset.ctier);
   if(act==="areaColor") return run(()=>API.setAreaColor(S.area,b.dataset.color), "Area colour updated everywhere");
-  if(act==="saveArea") return run(()=>API.saveArea(S.area, $("#areaName").value.trim(), $("#areaLead").value), "Area saved");
+  if(act==="saveArea") return run(()=>API.saveArea(S.area, $("#areaName").value.trim(), AREAS[S.area].lead), "Area saved");
   if(act==="addArea"){ closeDrawer(); return run(()=>API.saveArea(null,"New area",u.id)).then(id=>{ if(id){ S.area=id; render(); toast("New area added. Rename it and add skills."); } }); }
 
   // people
@@ -807,6 +818,7 @@ document.addEventListener("change",e=>{
   if(t.id==="ovA") fillOvSkills();
   if(t.dataset.act==="interest") return run(()=>API.setInterest(S.selected,t.checked));
   if(t.id==="areaColorPick") return run(()=>API.setAreaColor(S.area,t.value), "Area colour updated everywhere");
+  if(t.dataset.astaff){ const p=person(t.dataset.sp), a=AREAS[t.dataset.astaff]; return run(()=>API.setAreaStaff(a.id,p.id,t.checked), `${p.name} ${t.checked?"added to":"removed from"} ${a.name}`); }
   if(t.dataset.rule) return run(()=>API.setRule(S.area,t.dataset.rule,Math.max(0,parseInt(t.value)||0)));
   const pid=t.dataset.pname||t.dataset.prole||t.dataset.phome||t.dataset.pactive||t.dataset.end;
   if(pid){ const p=person(pid); const f={name:p.name,role:p.role,home:p.home,end:p.end,active:p.active};

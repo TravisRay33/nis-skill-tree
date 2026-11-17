@@ -52,8 +52,10 @@ const DemoAPI = {
   async setRetired(sid,on){ const sk=SKILLS[sid]; sk.retired=on;
     if(on) S.requests.forEach(r=>{ if(r.sid===sid&&r.status==="requested") Object.assign(r,{status:"returned",note:"Skill retired",reviewer:me().id}); });
     addLog(`${me().name} ${on?"retired":"restored"} "${sk.name}"`); },
+  async setAreaStaff(area,pid,on){ const a=AREAS[area]; a.staff=(a.staff||[]).filter(x=>x!==pid); if(on) a.staff.push(pid);
+    addLog(`${me().name} ${on?"added":"removed"} ${person(pid).name} ${on?"to":"from"} ${a.name} staff`); },
   async saveArea(id,name,lead){
-    if(!id){ id=newId("area"); AREAS[id]={id,name:name||"New area",lead,tiers:{},rules:{bronze:{el:2},silver:{el:2},gold:{el:2}}};
+    if(!id){ id=newId("area"); AREAS[id]={id,name:name||"New area",lead,staff:lead?[lead]:[],tiers:{},rules:{bronze:{el:2},silver:{el:2},gold:{el:2}}};
       TIERS.forEach(t=>{ const cid=id+"-"+t+"-cap"; SKILLS[cid]={id:cid,area:id,tier:t,kind:"cap",name:{bronze:"Teach the new area SOP",silver:"Lead an advanced workshop",gold:"Develop a new workshop"}[t],desc:"Describe the capstone.",steps:["Plan","Deliver with the area lead present","Request sign-off"],time:"TBD"}; AREAS[id].tiers[t]={req:[],el:[],cap:cid}; });
       addLog(`${me().name} added a new area`); }
     else { const a=AREAS[id]; a.name=name||a.name; a.lead=lead||null; addLog(`${me().name} updated area ${a.name}`); }
@@ -87,7 +89,11 @@ const LiveAPI = {
       fetchAll("certifications","at"),fetchAll("events","id"),fetchAll("requests","id"),fetchAll("interests","person"),
       sb.from("activity_log").select("*").order("id",{ascending:false}).limit(50)]);
     Object.keys(AREAS).forEach(k=>delete AREAS[k]); Object.keys(SKILLS).forEach(k=>delete SKILLS[k]); PEOPLE.length=0;
-    areas.forEach(a=>{ AREAS[a.id]={id:a.id,name:a.name,lead:a.lead,color:a.color||null,tiers:{},rules:{}}; TIERS.forEach(t=>{ AREAS[a.id].tiers[t]={req:[],el:[],cap:null}; AREAS[a.id].rules[t]={el:2}; }); });
+    areas.forEach(a=>{ AREAS[a.id]={id:a.id,name:a.name,lead:a.lead,staff:[],color:a.color||null,tiers:{},rules:{}}; TIERS.forEach(t=>{ AREAS[a.id].tiers[t]={req:[],el:[],cap:null}; AREAS[a.id].rules[t]={el:2}; }); });
+    // area staff (supabase/10_area_staff.sql); before that script is run, fall back to the old single lead
+    try{ const {data,error}=await sb.from("area_staff").select("*"); if(error) throw error;
+      data.forEach(r=>{ if(AREAS[r.area]) AREAS[r.area].staff.push(r.person); }); }
+    catch(_){ Object.values(AREAS).forEach(a=>{ if(a.lead) a.staff=[a.lead]; }); }
     rules.forEach(r=>{ if(AREAS[r.area]) AREAS[r.area].rules[r.tier]={el:r.electives_needed}; });
     skills.forEach(s=>{ const T=AREAS[s.area]?.tiers[s.tier]; if(!T) return;
       SKILLS[s.id]={id:s.id,area:s.area,tier:s.tier,kind:s.kind,name:s.name,desc:s.description,steps:Array.isArray(s.steps)?s.steps:[],time:s.est_time,retired:s.retired};
@@ -119,6 +125,7 @@ const LiveAPI = {
   addSkill: (area,tier,kind)=>rpc("add_skill",{p_area:area,p_tier:tier,p_kind:kind}),
   saveSkill: (sid,f)=>rpc("save_skill",{p_id:sid,p_name:f.name,p_desc:f.desc,p_steps:f.steps,p_time:f.time,p_kind:f.kind,p_tier:f.tier}),
   setRetired: (sid,on)=>rpc("set_retired",{p_id:sid,p_retired:on}),
+  setAreaStaff: (area,pid,on)=>rpc("set_area_staff",{p_area:area,p_person:pid,p_on:on}),
   saveArea: (id,name,lead)=>rpc("save_area",{p_id:id,p_name:name,p_lead:lead||null}),
   // needs supabase/5_area_colors.sql (adds areas.color and set_area_color); until then the default colours are used
   setAreaColor: (area,hex)=>rpc("set_area_color",{p_area:area,p_color:hex}),

@@ -10,35 +10,35 @@ const TIER_FOCUS = {
 const RULE = {required:2, electivesNeeded:2};
 
 const AREA_DEFS = [
- {id:"wood",name:"Woodshop",lead:"dana",t:{
+ {id:"wood",name:"Woodshop",staff:["dana"],t:{
   bronze:{req:["Table saw blade change & alignment check","Dust collection: empty & clean filters"],el:["Bandsaw blade change & tracking","Sharpen chisels & plane irons","Wax & clean cast-iron tops","Planer & jointer knife inspection"],cap:"Teach the Woodshop Safety SOP"},
   silver:{req:["SawStop brake cartridge replacement","ShopBot CNC: run a job & zero tools"],el:["Jointer & planer knife replacement","Lathe tool rest & tailstock troubleshooting","Router table setup for joinery","Diagnose tear-out & burn marks"],cap:"Lead an advanced woodshop workshop"},
   gold:{req:["Table saw trunnion & arbor alignment","ShopBot gantry squaring & spindle service"],el:["Dust collector impeller service","Bandsaw tire replacement","CNC toolpath & post-processor troubleshooting","Planer feed roller repair"],cap:"Develop a new woodshop workshop"}}},
- {id:"metal",name:"Metalshop",lead:"dana",t:{
+ {id:"metal",name:"Metalshop",staff:["dana","diego"],t:{
   bronze:{req:["MIG welder: wire & contact tip change","Grinder wheel inspection & replacement"],el:["Gas cylinder change & leak check","Horizontal bandsaw blade change","Welding bay cleanup & organization","Drill press belt & chuck care"],cap:"Teach the Metalshop Safety SOP"},
   silver:{req:["TIG setup: tungsten prep & gas","Plasma cutter consumables & cut quality"],el:["Metal lathe threading setup","Tram the mill head","Troubleshoot MIG porosity & bird-nesting","Sheet metal brake & shear setup"],cap:"Lead an advanced metalshop workshop"},
   gold:{req:["CNC plasma table calibration","Mill & lathe gib and backlash adjustment"],el:["MIG drive roll & liner rebuild","Plasma torch lead replacement","Coolant system service","Diagnose welder electrical faults"],cap:"Develop a new metalshop workshop"}}},
- {id:"rp",name:"3D Printing & Scanning",lead:"priya",t:{
+ {id:"rp",name:"3D Printing & Scanning",staff:["priya","travis"],t:{
   bronze:{req:["3D printer nozzle change & bed leveling","Build plate cleaning & first-layer check"],el:["Filament loading, drying & storage","Print failure triage (warping, spaghetti)","3D scanner calibration & first scan","Resin handling, washing & curing"],cap:"Teach the 3D Printing & Scanning SOP"},
   silver:{req:["Resin printer tank & build plate care","Scan to printable mesh (cleanup & repair)"],el:["Slicer profile tuning","Soluble support & multi-material prints","Clear extruder clogs & heat creep","Photogrammetry capture & processing"],cap:"Lead an advanced 3D printing & scanning workshop"},
   gold:{req:["3D printer hotend & mainboard replacement","Bed probe & leveling sensor replacement"],el:["Firmware update & recalibration","Printer motion system repair","Resin printer LCD & FEP replacement","Scanner hardware calibration & troubleshooting"],cap:"Develop a new 3D printing & scanning workshop"}}},
- {id:"laser",name:"Laser Engraving",lead:"priya",t:{
+ {id:"laser",name:"Laser Engraving",staff:["priya"],t:{
   bronze:{req:["Laser lens & mirror cleaning","Job setup: focus, material settings & air assist"],el:["Laser exhaust filter check","Material safety check (what can't be lasered)","Honeycomb bed & crumb tray cleaning","Rotary attachment setup"],cap:"Teach the Laser Engraving SOP"},
   silver:{req:["Laser mirror alignment","Air assist & exhaust fan service"],el:["Laser focus & power/speed test grids","Photo & grayscale raster engraving","Cut kerf & joint-fit tuning","Fiber laser marking on metal"],cap:"Lead an advanced laser engraving workshop"},
   gold:{req:["Laser tube replacement & alignment","Laser power supply troubleshooting"],el:["Laser chiller service","Motion system & belt tensioning","Fiber laser lens & galvo calibration","Laser software & driver troubleshooting"],cap:"Develop a new laser engraving workshop"}}},
- {id:"elec",name:"Electronics & Robotics",lead:"diego",t:{
+ {id:"elec",name:"Electronics & Robotics",staff:["diego"],t:{
   bronze:{req:["Soldering station setup, tip care & fume extraction","Multimeter basics: voltage, continuity & resistance"],el:["Through-hole soldering kit build","Bench power supply safe use","ESD-safe handling","Component storage & inventory"],cap:"Teach the Electronics Bench SOP"},
   silver:{req:["Surface-mount soldering & rework","Microcontroller programming (Arduino)"],el:["Oscilloscope measurements","Sensor & motor wiring","Robot arm: teach & run a program","Desolder & repair a circuit board"],cap:"Lead an advanced electronics & robotics workshop"},
   gold:{req:["Robot arm calibration & safety system checks","PCB design to fabricated board"],el:["Embedded systems debugging","End-effector design & integration","Motor driver & power electronics troubleshooting","Bench equipment calibration"],cap:"Develop a new electronics & robotics workshop"}}},
- {id:"cer",name:"Ceramics",lead:"hannah",t:{
+ {id:"cer",name:"Ceramics",staff:["hannah"],t:{
   bronze:{req:["Wheel & splash pan cleaning","Reclaim clay processing"],el:["Glaze bucket mixing & labeling","Kiln shelf scraping & kiln wash","Clay trap cleaning","Wedging & clay storage"],cap:"Teach the Ceramics Studio SOP"},
   silver:{req:["Load & fire a bisque kiln","Load & fire a glaze kiln"],el:["Slab roller setup & care","Pug mill operation","Troubleshoot crawling & pinholes","Mix a glaze from a recipe"],cap:"Lead an advanced ceramics workshop"},
   gold:{req:["Kiln element replacement","Thermocouple & controller troubleshooting"],el:["Wheel motor & pedal repair","Kiln relay replacement","Formulate & test a new glaze","Pug mill rebuild"],cap:"Develop a new ceramics workshop"}}},
- {id:"des",name:"Design",lead:"sam",t:{
+ {id:"des",name:"Design",staff:["sam"],t:{
   bronze:{req:["Large-format printer paper & ink change","Design lab workstation checks"],el:["Export files for laser & vinyl","Monitor color calibration","Flatbed scanning","Printhead cleaning & nozzle check","Vinyl cutter blade change"],cap:"Teach the Design Lab SOP"},
   silver:{req:["Fusion 360 CAD for fabrication","Illustrator cut-file preparation"],el:["Large-format ICC color profiles","3D scanning & mesh cleanup","Vector tracing & file repair","Sublimation & heat press setup"],cap:"Lead an advanced design workshop"},
   gold:{req:["Printhead replacement & alignment","Fusion CAM toolpaths for the CNC"],el:["Printer RIP software troubleshooting","Parametric & generative modeling","Workstation imaging & software deployment","Diagnose print banding & color shifts"],cap:"Develop a new design workshop"}}},
- {id:"tex",name:"Textiles",lead:"sam",t:{
+ {id:"tex",name:"Textiles",staff:["sam","hannah"],t:{
   bronze:{req:["Threading, bobbin & needle change","Clean & oil sewing machines"],el:["Serger threading","Iron & pressing station care","Embroidery machine hooping","Cutting table & fabric storage setup"],cap:"Teach the Textiles SOP"},
   silver:{req:["Sewing machine tension troubleshooting","Embroidery digitizing basics"],el:["Serger differential feed setup","Industrial machine operation","Pattern drafting & grading","Fix skipped stitches & thread nests"],cap:"Lead an advanced textiles workshop"},
   gold:{req:["Sewing machine timing adjustment","Embroidery hook & timing repair"],el:["Serger looper timing","Motor & foot pedal repair","Industrial feed dog adjustment","Complex & 3D puff digitizing"],cap:"Develop a new textiles workshop"}}}
@@ -61,8 +61,9 @@ const PEOPLE = [
  {id:"avery",name:"Avery Chen",role:"intern",home:"elec",end:"2028-05-12"}
 ];
 PEOPLE.forEach(p=>p.active=true);
-/* Two roles: Staff (stored as "admin": full access) and Intern. Each staff member is the primary
-   contact for an area or two (areas[].lead = that area's primary staff member). */
+/* Two roles: Staff (stored as "admin": full access) and Intern. Each area has a list of area staff
+   (areas[].staff = person ids), set in the Area staff table under Coverage & admin. Any staff member can
+   approve anything; area staff are who interns are pointed to. */
 const ROLE_NAME = {admin:"Staff",intern:"Intern"};
 const RISK_DAYS = 120;
 
@@ -97,7 +98,7 @@ const acVars = id=>`--ac:var(--a-${id});--ac-on:var(--a-${id}-on);--ac-ink:var(-
 /* build skills */
 const SKILLS = {}; const AREAS = {};
 AREA_DEFS.forEach(a=>{
-  AREAS[a.id] = {id:a.id,name:a.name,lead:a.lead,color:DEFAULT_AREA_COLOR[a.id],tiers:{},rules:{bronze:{el:2},silver:{el:2},gold:{el:2}}};
+  AREAS[a.id] = {id:a.id,name:a.name,lead:a.staff[0]||null,staff:[...a.staff],color:DEFAULT_AREA_COLOR[a.id],tiers:{},rules:{bronze:{el:2},silver:{el:2},gold:{el:2}}};
   TIERS.forEach(t=>{
     const d=a.t[t]; const ids={req:[],el:[],cap:null};
     d.req.forEach((n,i)=>{const id=`${a.id}-${t}-r${i+1}`;SKILLS[id]=mk(id,a,t,"req",n);ids.req.push(id);});
